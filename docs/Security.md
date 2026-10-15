@@ -59,6 +59,8 @@ Do not assume that authentication, authorization, a database, persistent storage
 
 Document authentication requirements appropriate to the actual application.
 
+**Current implementation:** The SPA uses Auth0 Universal Login through `@auth0/auth0-react` with memory-only token caching. The API accepts bearer access tokens and validates RS256 signatures from the configured tenant JWKS, issuer, audience, expiry, and required `sub`/`iat` claims. It uses the validated `sub` as the principal ID. There is no local password or account store. Provider configuration is deployment-specific and must be set before protected routes can be used.
+
 If authentication is implemented:
 
 - Verify credentials securely.
@@ -90,7 +92,7 @@ Define requirements for resource ownership and access control.
 - Ensure comparison workflows use only the documents supplied and authorized for that analysis.
 - Test unauthorized access, guessed identifiers, and cross-document contamination.
 
-If the application currently has no user identity or ownership model, document that limitation and the controls required before multi-user production deployment.
+The current ownership model is enforced by the API and uses a process-local registry. It isolates users within one backend process, but documents and ownership are volatile and are not shared across workers. Persistent shared storage and deployment-specific OIDC configuration are required before a multi-worker production deployment.
 
 ## 5. Secrets and Configuration
 

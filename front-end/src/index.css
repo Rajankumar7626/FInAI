@@ -1,0 +1,26 @@
+:root {
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+  color: #182326;
+  background: #f2f5f0;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #182326;
+  --muted: #6a7774;
+  --line: #dce4de;
+  --paper: #ffffff;
+  --wash: #f2f5f0;
+  --forest: #17483d;
+  --teal: #0f7467;
+  --mint: #dceee7;
+  --amber: #c97b25;
+  --red: #b54747;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--wash); }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--wash); }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, input:focus-visible, label:focus-within { outline: 3px solid rgba(15, 116, 103, .28); outline-offset: 2px; }
+#root { min-height: 100vh; }

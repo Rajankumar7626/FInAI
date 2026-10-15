@@ -142,6 +142,10 @@ Only include components that exist in the repository or clearly label proposed t
 ### 7. API and Integration Test Plan
 Document actual API routes and their expected behavior.
 
+The implemented authentication regression suite is `tests/test_auth_ownership.py`. It uses synthetic RS256 keys and principals, and verifies missing/invalid/expired tokens, configured issuer and audience, owner-scoped listing and reads, cross-owner analysis/comparison/report/delete rejection, and identical 404 behavior for unknown and non-owned document IDs. Run it with `\.venv\Scripts\python.exe -m pytest tests/test_auth_ownership.py -q`; it does not contact Auth0. Legacy feature suites override the identity dependency with a synthetic test principal; they continue to verify authorized extraction, risk, comparison, report, upload-size, and concurrency behavior.
+
+The `/health` endpoint is public. All document endpoints require a valid Auth0 API access token and enforce ownership on the backend.
+
 For each relevant route, cover:
 - Valid requests
 - Missing or malformed fields

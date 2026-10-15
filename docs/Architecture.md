@@ -187,6 +187,10 @@ The backend API is responsible for:
 
 The exact routes, request schemas, response schemas, and persistence behavior should be documented from `backend/api.py` and its imported modules rather than inferred from frontend page names.
 
+### Identity and document ownership
+
+The React SPA uses the Auth0 React SDK and obtains an access token for the configured API audience. Tokens are cached in memory in the browser. FastAPI validates RS256 signatures using the Auth0 tenant JWKS and checks issuer, audience, expiry, and required claims. The validated `sub` claim is the principal key; the API accepts no client-selected owner ID. The registry stores that owner ID with every document, and all list, retrieval, analysis, comparison, report, and delete operations enforce ownership under the registry lock. The registry remains process-local and volatile; identity lifecycle is external to the application, and documents are neither durable nor shared across workers.
+
 ---
 
 ## 6. Orchestration Architecture
@@ -589,7 +593,7 @@ Before this document is considered implementation-verified, inspect the reposito
 - The actual database and file-storage configuration.
 - The LLM and embedding provider integrations.
 - Report and PDF generation paths.
-- Authentication, authorization, and document ownership enforcement.
+- Auth0 token validation and document ownership enforcement; persistence and cross-worker ownership remain deployment decisions.
 - The exact test coverage and successful test results.
 
 Record discrepancies between intended and implemented behavior as follow-up tasks rather than documenting them as completed functionality.
