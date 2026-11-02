@@ -87,15 +87,39 @@ class FinancialMetric(BaseModel):
             raise ValueError("Source context must contain the original reported amount.")
 
         labels = {
-            "revenue": ("revenue",),
-            "net_income": ("net income", "net profit"),
-            "operating_profit": ("operating profit", "operating income"),
+            "revenue": ("total revenues", "total revenue", "revenues", "revenue"),
+            "net_income": ("net income (loss)", "net income", "net loss", "net profit"),
+            "operating_profit": (
+                "income (loss) from operations",
+                "income from operations",
+                "operating income",
+                "operating profit",
+            ),
             "total_assets": ("total assets",),
             "total_liabilities": ("total liabilities",),
-            "total_debt": ("total debt",),
+            "total_debt": (
+                "total debt, net",
+                "total debt (principal amount)",
+                "total debt",
+                "long-term debt, net",
+                "long-term debt",
+            ),
             "cash_and_cash_equivalents": ("cash and cash equivalents",),
-            "operating_cash_flow": ("operating cash flow",),
-            "earnings_per_share": ("earnings per share", "eps"),
+            "operating_cash_flow": (
+                "net cash flows provided by operating activities",
+                "net cash provided by operating activities",
+                "cash flows provided by operating activities",
+                "operating activities",
+                "operating cash flow",
+                "operating cash flows",
+            ),
+            "earnings_per_share": (
+                "net income (loss) per share",
+                "earnings per share",
+                "diluted",
+                "basic",
+                "eps",
+            ),
         }
         if not any(
             re.search(rf"(?<!\w){re.escape(label)}(?!\w)", self.source_context, re.IGNORECASE)

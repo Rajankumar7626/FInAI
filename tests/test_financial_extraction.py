@@ -255,3 +255,55 @@ def test_financial_data_endpoint_returns_404_for_unknown_document() -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Document not found."}
+
+def test_filters_sec_noise_and_extracts_primary_metrics() -> None:
+    text = """Item 1. Business
+2. REVENUE
+The Company updated its presentation in this Annual Report on Form 10-K.
+Minimum corporate tax of 15% for companies with global revenue above Pillar 2.
+Under the Internal Revenue Code, employees may make contributions under the 401(k) Plan.
+Recurring revenue (1) 94%
+Upfront revenue (2) 6%
+(1) Recurring revenue is comprised of recurring contracts.
+(2) See Note 2, Revenue from Contracts with Customers.
+We may estimate revenue related to contingent fees 26
+12. NET INCOME (LOSS) PER SHARE
+Total revenues: $219 million
+Net loss was $0.6 million for the year ended December 31, 2025
+Operating cash flow: $24.1 million
+Total assets: $418.7 million
+Total debt, net: $67.0 million
+"""
+    result = extract_financial_data("doc-clean", text)
+    metrics_map = {m.metric_name: m for m in result.metrics}
+
+    assert "revenue" in metrics_map
+    assert metrics_map["revenue"].value == 219.0
+    assert metrics_map["revenue"].unit == "million"
+
+    assert "net_income" in metrics_map
+    assert metrics_map["net_income"].value == -0.6
+    assert metrics_map["net_income"].reporting_period == "2025"
+
+    assert "operating_cash_flow" in metrics_map
+    assert metrics_map["operating_cash_flow"].value == 24.1
+
+    assert "total_assets" in metrics_map
+    assert metrics_map["total_assets"].value == 418.7
+
+    assert "total_debt" in metrics_map
+    assert metrics_map["total_debt"].value == 67.0
+
+
+def test_extracts_financial_statement_table_multi_column_data() -> None:
+    text = """CONSOLIDATED BALANCE SHEETS
+Cash and cash equivalents   $ 42,220     $ 90,594
+Total assets   $ 418,697     $ 315,289
+Total liabilities     147,675       69,252
+"""
+    result = extract_financial_data("doc-table", text)
+    metrics_map = {m.metric_name: m for m in result.metrics}
+
+    assert metrics_map["cash_and_cash_equivalents"].value == 42220.0
+    assert metrics_map["total_assets"].value == 418697.0
+    assert metrics_map["total_liabilities"].value == 147675.0
