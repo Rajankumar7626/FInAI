@@ -30,6 +30,7 @@ import { DashboardView } from './views/DashboardView'
 import { DocumentsView } from './views/DocumentsView'
 import { FinancialsView } from './views/FinancialsView'
 import { HistoryView } from './views/HistoryView'
+import { LandingPage } from './views/LandingPage'
 import { ReportsView } from './views/ReportsView'
 import { ResearchView } from './views/ResearchView'
 import { RiskView } from './views/RiskView'
@@ -58,35 +59,19 @@ function App() {
 
   if (!isAuthenticated || !user?.sub) {
     return (
-      <main className="auth-screen">
-        <section className="auth-card">
-          <p className="section-kicker">FinSight AI</p>
-          <h1>Sign in to your workspace</h1>
-          <p>Your documents and analysis are available only to your account.</p>
-
-          {(error || loginFailed) && (
-            <div className="notice error" role="alert">
-              {error?.message ? `Sign-in error: ${error.message}` : 'Sign-in could not be completed. Please try again.'}
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="primary-button"
-            onClick={async () => {
-              setLoginFailed(false)
-              try {
-                await loginWithRedirect()
-              } catch (err: unknown) {
-                console.error('Auth0 loginWithRedirect failed:', err)
-                setLoginFailed(true)
-              }
-            }}
-          >
-            Sign in
-          </button>
-        </section>
-      </main>
+      <LandingPage
+        onLogin={async () => {
+          setLoginFailed(false)
+          try {
+            await loginWithRedirect()
+          } catch (err: unknown) {
+            console.error('Auth0 loginWithRedirect failed:', err)
+            setLoginFailed(true)
+          }
+        }}
+        loginFailed={loginFailed}
+        error={error}
+      />
     )
   }
 
