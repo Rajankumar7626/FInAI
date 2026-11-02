@@ -351,7 +351,7 @@ function Workspace({
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-lockup">
-          <div className="brand-mark">F</div>
+          <img src="/logo.png" alt="FinSight AI Logo" className="brand-mark-img" />
           <div>
             <strong>FinSight</strong>
             <span>Research workspace</span>

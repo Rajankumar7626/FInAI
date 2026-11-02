@@ -18,7 +18,7 @@ export function LandingPage({ onLogin, loginFailed, error }: LandingPageProps) {
         {/* Navigation Bar */}
         <header className="landing-nav">
           <div className="landing-brand">
-            <div className="landing-brand-logo">F</div>
+            <img src="/logo.png" alt="FinSight AI Logo" className="landing-brand-img" />
             <span className="landing-brand-text">FinSight AI</span>
           </div>
 
