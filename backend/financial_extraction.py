@@ -13,6 +13,7 @@ class MetricDefinition:
     aliases: tuple[str, ...]
 
 
+# Universal GAAP / IFRS financial line item definitions
 METRIC_DEFINITIONS = (
     MetricDefinition(
         "revenue",
@@ -92,7 +93,15 @@ UNIT_NAMES = {
 UNSUPPORTED_CURRENCY_PATTERN = re.compile(r"\b[A-Z]{3}\s*(?=\d)")
 UNSUPPORTED_UNIT_PATTERN = re.compile(r"\b(?:trillion|crore|crores|lakh|lakhs)\b", re.IGNORECASE)
 
+TABLE_SCALE_PATTERNS = {
+    "thousand": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp\s+in)?\s*thousands\b", re.IGNORECASE),
+    "million": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp\s+in)?\s*millions\b", re.IGNORECASE),
+    "billion": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp\s+in)?\s*billions\b", re.IGNORECASE),
+}
+
+# Universal accounting, statutory, and document structural exclusions
 EXCLUDED_PATTERNS = (
+    # Statutory, tax, and securities regulations (never corporate financial statement facts)
     re.compile(r"\bInternal Revenue\b", re.IGNORECASE),
     re.compile(r"\bIRS\b", re.IGNORECASE),
     re.compile(r"\bPillar\s+\d+\b", re.IGNORECASE),
@@ -100,13 +109,20 @@ EXCLUDED_PATTERNS = (
     re.compile(r"\b401\s*\(\s*k\s*\)", re.IGNORECASE),
     re.compile(r"\bRule\s+\d+[a-z]?-\d+\b", re.IGNORECASE),
     re.compile(r"\bSection\s+\d+\b", re.IGNORECASE),
+    # Outline / Note / Section titles (e.g. "2. REVENUE", "12. NET INCOME (LOSS) PER SHARE")
     re.compile(r"^\s*(\d+\.|\bNote\s+\d+[:.]?)\s+[A-Z\s\(\)/-]+$", re.IGNORECASE),
     re.compile(r"^\s*\(\d+\)\s+See\s+.*Note\s+\d+", re.IGNORECASE),
     re.compile(r"^\s*\(\d+\)\s+[A-Z]", re.IGNORECASE),
+    # Accounting line item disambiguation:
+    # Cost of revenue is Cost of Goods Sold (COGS expense), distinct from Revenue
     re.compile(r"\b(costs?|expenses?|amortization)\s+of\s+revenues?\b", re.IGNORECASE),
+    # Deferred revenue is a balance sheet liability, distinct from Revenue
     re.compile(r"\bdeferred\s+revenues?\b", re.IGNORECASE),
+    # Total liabilities & equity is the balance sheet footing, distinct from Total Liabilities
     re.compile(r"\b(and|plus)\s+(stockholders|shareholders)[\'’]?\s+equity\b", re.IGNORECASE),
+    # Weighted average shares is share count, distinct from Earnings Per Share ($/share)
     re.compile(r"\bweighted\s+average\s+(common\s+)?shares\b", re.IGNORECASE),
+    # Proceeds / repayment of debt is a financing cash flow activity, distinct from Total Debt balance
     re.compile(r"\b(proceeds|issuance|repayment)\s+(from|of)\s+long-term\s+debt\b", re.IGNORECASE),
 )
 
@@ -117,6 +133,7 @@ class AmountCandidate:
     original_text: str
     currency: str | None
     unit: str | None
+    start_pos: int = 0
 
 
 def _is_excluded(line: str) -> bool:
@@ -127,14 +144,17 @@ def _normalize_lines(text: str) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
-def _matching_definitions(line: str) -> list[MetricDefinition]:
-    matches = []
+def _matching_definitions(line: str) -> list[tuple[MetricDefinition, re.Match[str]]]:
+    matches: list[tuple[MetricDefinition, re.Match[str]]] = []
     for definition in METRIC_DEFINITIONS:
-        if any(
-            re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", line, re.IGNORECASE)
-            for alias in definition.aliases
-        ):
-            matches.append(definition)
+        earliest_match: re.Match[str] | None = None
+        for alias in definition.aliases:
+            m = re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", line, re.IGNORECASE)
+            if m:
+                if earliest_match is None or m.start() < earliest_match.start():
+                    earliest_match = m
+        if earliest_match is not None:
+            matches.append((definition, earliest_match))
     return matches
 
 
@@ -149,16 +169,23 @@ def _amount_candidates(line: str) -> list[AmountCandidate]:
     if UNSUPPORTED_UNIT_PATTERN.search(line):
         return []
 
+    # Page number artifact detection:
+    # Trailing lone integer at the end of a prose sentence without currency or unit
     trailing_page_match = None
-    if len(line) > 35 and re.search(r"([a-z\.\,\)]\s+)\d{1,3}\s*$", line):
+    if re.search(r"[a-z\.\,\)]\s+\d{1,3}\s*$", line):
         m = re.search(r"\b(\d{1,3})\s*$", line)
         if m:
             trailing_page_match = m.start()
 
     candidates: list[AmountCandidate] = []
     for match in NUMBER_PATTERN.finditer(line):
+        currency_text = match.group("currency")
+        unit_text = (match.group("unit") or "").lower()
+
+        # If this number is an unformatted trailing page number at the end of a sentence, skip it
         if trailing_page_match is not None and match.start() >= trailing_page_match:
-            continue
+            if not currency_text and not unit_text:
+                continue
 
         number_text = match.group("number")
         if len(number_text.replace(",", "")) == 4 and YEAR_PATTERN.fullmatch(
@@ -166,25 +193,21 @@ def _amount_candidates(line: str) -> list[AmountCandidate]:
         ):
             continue
 
-        unit_text = (match.group("unit") or "").lower()
         if unit_text in {"%", "percent"}:
             continue
 
-        currency_text = match.group("currency")
-
-        # Footnote/enumeration filter: e.g. (1), (2), (3) without currency, unit, or decimal
+        # Footnote / list enumerator detection:
+        # Standalone 1 or 2 digit integer in parentheses with no currency, no unit, and no formatting (e.g. (1), (2))
         if match.group("opening") and match.group("closing"):
-            if (
-                not currency_text
-                and not unit_text
-                and "." not in number_text
-                and "," not in number_text
-            ):
-                try:
-                    if int(number_text) <= 50:
-                        continue
-                except ValueError:
-                    pass
+            is_accounting_negative = bool(
+                currency_text
+                or unit_text
+                or "." in number_text
+                or "," in number_text
+                or len(number_text) >= 3
+            )
+            if not is_accounting_negative:
+                continue
 
         value = float(number_text.replace(",", ""))
         if not math.isfinite(value):
@@ -205,6 +228,7 @@ def _amount_candidates(line: str) -> list[AmountCandidate]:
                 original_text=match.group(0).strip(),
                 currency=currency,
                 unit=UNIT_NAMES.get(unit_text),
+                start_pos=match.start(),
             )
         )
     return candidates
@@ -235,48 +259,53 @@ def _resolve_currency(candidate: AmountCandidate, source_context: str) -> str | 
 
 
 def _metric_confidence_score(metric: FinancialMetric) -> float:
+    """
+    Pure logical confidence score based on universal accounting hierarchy:
+    - Primary financial statement line items (Consolidated / Total) rank higher than sub-categories.
+    - Explicit financial units and currency rank higher than bare numbers.
+    - Explicit reporting periods rank higher than unstated periods, prioritizing focal fiscal years.
+    - Unrestricted headline figures rank higher than restricted/footnote accounts.
+    """
     score = 0.0
+
+    # Explicit measurement units
     if metric.unit is not None:
-        score += 50.0
+        score += 40.0
     if metric.currency is not None:
         score += 30.0
     if metric.reporting_period is not None:
         score += 20.0
         try:
-            score += (int(metric.reporting_period) - 2000) * 2.0
+            score += (int(metric.reporting_period) - 2000) * 10.0
         except ValueError:
             pass
 
     ctx_lower = metric.source_context.lower()
+
+    # Consolidated / Total accounting priority
+    if "total" in ctx_lower or "consolidated" in ctx_lower:
+        score += 25.0
+
     if metric.metric_name == "revenue":
-        if "total revenue" in ctx_lower:
-            score += 40.0
-        if any(
-            seg in ctx_lower
-            for seg in ["platform revenue", "volume-based", "recurring revenue"]
-        ):
-            score -= 25.0
+        if re.search(r"\b(total\s+revenues?|net\s+sales|net\s+revenues?)\b", ctx_lower):
+            score += 35.0
     elif metric.metric_name == "operating_cash_flow":
-        if "operating activities" in ctx_lower or "net cash provided by" in ctx_lower:
-            score += 40.0
+        if re.search(r"\b(operating\s+activities|cash\s+flows?\s+provided\s+by)\b", ctx_lower):
+            score += 30.0
     elif metric.metric_name == "operating_profit":
-        if "from operations" in ctx_lower:
-            score += 40.0
+        if re.search(r"\b(from\s+operations|operating\s+income|operating\s+profit)\b", ctx_lower):
+            score += 30.0
     elif metric.metric_name == "total_debt":
-        if "total debt, net" in ctx_lower:
-            score += 40.0
+        if re.search(r"\btotal\s+debt\b", ctx_lower):
+            score += 30.0
     elif metric.metric_name == "cash_and_cash_equivalents":
-        if "foreign subsidiaries" in ctx_lower or "restricted" in ctx_lower:
-            score -= 35.0
-        if (
-            "we had cash and cash equivalents" in ctx_lower
-            or "balance sheets" in ctx_lower
-        ):
-            score += 40.0
+        if re.search(r"\b(restricted|subsidiaries|escrow)\b", ctx_lower):
+            score -= 30.0
     elif metric.metric_name == "earnings_per_share":
         if "diluted" in ctx_lower:
-            score += 30.0
+            score += 20.0
 
+    # Reject non-financial bare integer artifacts
     if (
         metric.unit is None
         and metric.currency is None
@@ -291,18 +320,29 @@ def _metric_confidence_score(metric: FinancialMetric) -> float:
 def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse:
     lines = _normalize_lines(text)
     raw_metrics: list[FinancialMetric] = []
+    active_table_scale: str | None = None
 
     for line_index, line in enumerate(lines):
+        # Update active table statement scale if a scale marker is encountered
+        for scale_name, scale_pattern in TABLE_SCALE_PATTERNS.items():
+            if scale_pattern.search(line):
+                active_table_scale = scale_name
+                break
+
         if _is_excluded(line):
             continue
 
-        definitions = _matching_definitions(line)
-        if len(definitions) != 1:
+        definition_matches = _matching_definitions(line)
+        if len(definition_matches) != 1:
             continue
 
-        definition = definitions[0]
-        candidates = _amount_candidates(line)
+        definition, label_match = definition_matches[0]
+        all_candidates = _amount_candidates(line)
+
+        # In natural language and financial statements, the disclosed value appears AFTER the label
+        candidates = [c for c in all_candidates if c.start_pos >= label_match.start()]
         source_context = line
+
         if not candidates and line_index + 1 < len(lines):
             if _contains_percentage(line):
                 continue
@@ -315,7 +355,11 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
                 candidates = next_candidates
                 source_context = f"{line} {next_line}"
 
+        if not candidates:
+            continue
+
         selected_candidate: AmountCandidate | None = None
+        is_table_row = False
         if len(candidates) == 1:
             selected_candidate = candidates[0]
         elif len(candidates) > 1 and ":" not in line and (
@@ -323,13 +367,27 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
             or "," in candidates[0].original_text
             or "(" in candidates[0].original_text
         ):
-            # Formatted table row with multi-column values (e.g. 2025, 2024, 2023)
+            # Financial statement table row: first column represents the focal (most recent) fiscal period
             selected_candidate = candidates[0]
+            is_table_row = True
 
         if selected_candidate is None:
             continue
 
         candidate = selected_candidate
+
+        # Table scale inheritance: if in a table where scale was stated (e.g. in thousands)
+        # and candidate has no explicit unit and is not a per-share metric
+        if is_table_row and candidate.unit is None and active_table_scale is not None:
+            if definition.name != "earnings_per_share":
+                candidate = AmountCandidate(
+                    value=candidate.value,
+                    original_text=candidate.original_text,
+                    currency=candidate.currency,
+                    unit=active_table_scale,
+                    start_pos=candidate.start_pos,
+                )
+
         # Handle explicit Net Loss or Operating Loss negation
         if candidate.value > 0 and re.search(
             r"\b(net\s+loss|loss\s+from\s+operations)\b",
@@ -341,6 +399,7 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
                 original_text=candidate.original_text,
                 currency=candidate.currency,
                 unit=candidate.unit,
+                start_pos=candidate.start_pos,
             )
 
         reporting_periods = YEAR_PATTERN.findall(source_context)
@@ -363,7 +422,7 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
             )
         )
 
-    # Deduplicate metrics to retain the single highest-confidence authoritative metric for each metric_name
+    # Deduplicate metrics by selecting the highest-confidence authoritative metric for each metric name
     grouped: dict[str, list[FinancialMetric]] = {}
     for metric in raw_metrics:
         grouped.setdefault(metric.metric_name, []).append(metric)
