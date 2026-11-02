@@ -174,3 +174,7 @@ select { min-height: 42px; padding: 0 11px; border: 1px solid var(--line); backg
 .statement-metric-name { color: var(--ink); text-transform: capitalize; }
 .statement-metric-val { font-family: Georgia, serif; font-weight: 600; color: var(--forest); }
 .statement-context { font-size: .68rem; color: var(--muted); margin-top: 3px; font-style: italic; }
+
+/* Settings and History Styles */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
+.prompt-chip.active { border-color: var(--forest); background: #eef7f2; color: var(--forest); font-weight: 700; }

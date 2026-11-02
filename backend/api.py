@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -158,11 +158,29 @@ def ask_document_question(
     document_id: str,
     request: ResearchQuestionRequest,
     principal: Principal = Depends(get_current_principal),
+    x_gemini_api_key: str | None = Header(default=None),
 ) -> ResearchQuestionResponse:
     document = document_registry.get_owned(document_id, principal.subject)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found.")
-    return answer_financial_question(document.document_id, document.extracted_text, request.question)
+    return answer_financial_question(
+        document.document_id,
+        document.extracted_text,
+        request.question,
+        api_key=x_gemini_api_key,
+    )
+
+
+@app.get("/system/status")
+def system_status() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "app_name": settings.app_name,
+        "app_version": settings.app_version,
+        "gemini_configured": bool(settings.gemini_api_key),
+        "gemini_model": settings.gemini_model,
+        "database_connected": True,
+    }
 
 
 @app.post("/documents/compare", response_model=ComparisonResponse)

@@ -62,13 +62,14 @@ def _call_gemini_api(
     question: str,
     context_text: str,
     metrics: list[FinancialMetric],
+    api_key: str | None = None,
 ) -> str | None:
-    api_key = settings.gemini_api_key
-    if not api_key:
+    active_key = api_key or settings.gemini_api_key
+    if not active_key:
         return None
 
     model = settings.gemini_model or "gemini-1.5-flash"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={active_key}"
 
     metrics_summary = "\n".join(
         [
@@ -124,6 +125,7 @@ def answer_financial_question(
     document_id: str,
     extracted_text: str,
     question: str,
+    api_key: str | None = None,
 ) -> ResearchQuestionResponse:
     cleaned_question = question.strip()
     if not cleaned_question:
@@ -200,7 +202,7 @@ def answer_financial_question(
 
     # 5. Hybrid: Try Gemini AI if API key is configured
     relevant_context = "\n\n".join([p for _, p, _ in scored_paragraphs[:5]]) or extracted_text[:4000]
-    gemini_answer = _call_gemini_api(cleaned_question, relevant_context, matched_metrics or list(metrics_by_name.values())[:5])
+    gemini_answer = _call_gemini_api(cleaned_question, relevant_context, matched_metrics or list(metrics_by_name.values())[:5], api_key=api_key)
     if gemini_answer:
         return ResearchQuestionResponse(
             document_id=document_id,

@@ -124,7 +124,7 @@ export type ResearchQuestionResponse = {
 }
 
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000'
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '')
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '')
 let accessTokenProvider: (() => Promise<string>) | null = null
 let unauthorizedHandler: (() => void) | null = null
 
@@ -217,15 +217,93 @@ export function getRiskAnalysis(documentId: string): Promise<RiskAnalysisRespons
   })
 }
 
+export function getStoredGeminiApiKey(): string {
+  try {
+    return localStorage.getItem('finsight_gemini_api_key') ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function setStoredGeminiApiKey(key: string): void {
+  try {
+    if (key.trim()) {
+      localStorage.setItem('finsight_gemini_api_key', key.trim())
+    } else {
+      localStorage.removeItem('finsight_gemini_api_key')
+    }
+  } catch {
+    // ignore local storage restrictions
+  }
+}
+
 export function askDocumentQuestion(
   documentId: string,
   question: string,
+  customApiKey?: string,
 ): Promise<ResearchQuestionResponse> {
+  const activeKey = customApiKey ?? getStoredGeminiApiKey()
   return request<ResearchQuestionResponse>(`/documents/${documentId}/ask`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(activeKey ? { 'x-gemini-api-key': activeKey } : {}),
+    },
     body: JSON.stringify({ question }),
   })
+}
+
+export interface SystemStatusResponse {
+  status: string
+  app_name: string
+  app_version: string
+  gemini_configured: boolean
+  gemini_model: string
+  database_connected: boolean
+}
+
+export function getSystemStatus(): Promise<SystemStatusResponse> {
+  return request<SystemStatusResponse>('/system/status')
+}
+
+export function getSavedReports(): ResearchReportResponse[] {
+  try {
+    const raw = localStorage.getItem('finsight_report_history')
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? (parsed as ResearchReportResponse[]) : []
+  } catch {
+    return []
+  }
+}
+
+export function saveReportToHistory(report: ResearchReportResponse): void {
+  try {
+    const existing = getSavedReports()
+    const filtered = existing.filter((r) => r.report_id !== report.report_id)
+    const updated = [report, ...filtered].slice(0, 20) // keep last 20 reports
+    localStorage.setItem('finsight_report_history', JSON.stringify(updated))
+  } catch {
+    // ignore local storage restrictions
+  }
+}
+
+export function deleteSavedReport(reportId: string): void {
+  try {
+    const existing = getSavedReports()
+    const updated = existing.filter((r) => r.report_id !== reportId)
+    localStorage.setItem('finsight_report_history', JSON.stringify(updated))
+  } catch {
+    // ignore local storage restrictions
+  }
+}
+
+export function clearReportHistory(): void {
+  try {
+    localStorage.removeItem('finsight_report_history')
+  } catch {
+    // ignore
+  }
 }
 
 export function compareDocuments(
