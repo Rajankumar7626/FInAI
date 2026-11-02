@@ -26,6 +26,8 @@ export function ComparisonView({
 }) {
   const firstDoc = documents.find((d) => d.document_id === selectedId)
   const secondDoc = documents.find((d) => d.document_id === secondId)
+  const firstName = firstDoc?.filename ?? 'First Report'
+  const secondName = secondDoc?.filename ?? 'Second Report'
 
   return (
     <section className="page-stack">
@@ -81,10 +83,14 @@ export function ComparisonView({
         <>
           <ComparisonVisualChart
             comparison={comparison}
-            firstName={firstDoc?.filename ?? 'Report A'}
-            secondName={secondDoc?.filename ?? 'Report B'}
+            firstName={firstName}
+            secondName={secondName}
           />
-          <ComparisonTable comparison={comparison} />
+          <ComparisonTable
+            comparison={comparison}
+            firstName={firstName}
+            secondName={secondName}
+          />
         </>
       )}
     </section>

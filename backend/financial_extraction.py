@@ -117,15 +117,24 @@ METRIC_DEFINITIONS = (
 
 NUMBER_PATTERN = re.compile(
     r"(?<![\w,])(?P<opening>\()?\s*"
-    r"(?P<currency>\$|€|£|USD|EUR|GBP)?\s*"
+    r"(?P<currency>\$|€|£|₹|■|USD|EUR|GBP|INR)?\s*"
     r"(?P<number>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)"
     r"\s*(?P<unit>million|millions|billion|billions|thousand|thousands|%|percent)?"
     r"\s*(?P<closing>\))?(?![\w,])",
     re.IGNORECASE,
 )
-YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
+YEAR_PATTERN = re.compile(r"(?:(?<=\D)|^)(?:19|20)\d{2}(?=\D|$)")
 
-CURRENCY_SYMBOLS = {"€": "EUR", "£": "GBP"}
+CURRENCY_SYMBOLS = {
+    "€": "EUR",
+    "£": "GBP",
+    "₹": "INR",
+    "INR": "INR",
+    "■": "INR",
+    "USD": "USD",
+    "EUR": "EUR",
+    "GBP": "GBP",
+}
 UNIT_NAMES = {
     "million": "million",
     "millions": "million",
@@ -134,13 +143,13 @@ UNIT_NAMES = {
     "thousand": "thousand",
     "thousands": "thousand",
 }
-UNSUPPORTED_CURRENCY_PATTERN = re.compile(r"\b[A-Z]{3}\s*(?=\d)")
+UNSUPPORTED_CURRENCY_PATTERN = re.compile(r"\b(?!EPS\b)[A-Z]{3}\s*(?=\d)")
 UNSUPPORTED_UNIT_PATTERN = re.compile(r"\b(?:trillion|crore|crores|lakh|lakhs)\b", re.IGNORECASE)
 
 TABLE_SCALE_PATTERNS = {
-    "thousand": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp\s+in)?\s*thousands\b", re.IGNORECASE),
-    "million": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp\s+in)?\s*millions\b", re.IGNORECASE),
-    "billion": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp\s+in)?\s*billions\b", re.IGNORECASE),
+    "thousand": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp|inr|[■₹]\s+in)?\s*thousands\b", re.IGNORECASE),
+    "million": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp|inr|[■₹]\s+in)?\s*millions\b", re.IGNORECASE),
+    "billion": re.compile(r"\(\s*(?:in|\$|usd|eur|gbp|inr|[■₹]\s+in)?\s*billions\b", re.IGNORECASE),
 }
 
 # Universal accounting, statutory, and document structural exclusions
@@ -211,6 +220,7 @@ def _amount_candidates(line: str) -> list[AmountCandidate]:
         "USD",
         "EUR",
         "GBP",
+        "INR",
     }:
         return []
     if UNSUPPORTED_UNIT_PATTERN.search(line):
@@ -265,8 +275,8 @@ def _amount_candidates(line: str) -> list[AmountCandidate]:
         currency = None
         if currency_text:
             currency_code = currency_text.upper()
-            currency = CURRENCY_SYMBOLS.get(currency_code)
-            if currency is None and currency_code in {"USD", "EUR", "GBP"}:
+            currency = CURRENCY_SYMBOLS.get(currency_code) or CURRENCY_SYMBOLS.get(currency_text)
+            if currency is None and currency_code in {"USD", "EUR", "GBP", "INR"}:
                 currency = currency_code
 
         candidates.append(
@@ -293,15 +303,85 @@ def _is_standalone_amount_line(line: str, candidate: AmountCandidate) -> bool:
     return not any(character.isalnum() for character in remainder)
 
 
-def _resolve_currency(candidate: AmountCandidate, source_context: str) -> str | None:
+def _detect_document_currency(text: str) -> str | None:
+    """Detects document-level reporting currency from standard corporate disclosure headers."""
+    cur_match = re.search(
+        r"(?:Currency|Reporting\s+Currency)\s*[:\n\r\-]*\s*([A-Za-z]{3}|\$|€|£|₹|■)",
+        text[:10000],
+        re.IGNORECASE,
+    )
+    if cur_match:
+        code = cur_match.group(1).upper()
+        if code in CURRENCY_SYMBOLS:
+            return CURRENCY_SYMBOLS[code]
+        if code in {"USD", "EUR", "GBP", "INR"}:
+            return code
+    if re.search(r"\b(?:u\.s\.\s+dollars?|dollars\s+in\s+(?:thousands|millions|billions))\b|\(dollars\s+in", text, re.IGNORECASE):
+        return "USD"
+    if re.search(r"\b(?:in\s+euros?|euros\s+in\s+(?:thousands|millions|billions))\b|\(euros\s+in", text, re.IGNORECASE):
+        return "EUR"
+    if re.search(r"\b(?:in\s+pounds?|pounds\s+in\s+(?:thousands|millions|billions))\b|\(pounds\s+in", text, re.IGNORECASE):
+        return "GBP"
+    if re.search(r"\b(?:in\s+rupees?|rupees\s+in\s+(?:thousands|millions|billions|crores?|lakhs?))\b|\(rupees\s+in", text, re.IGNORECASE):
+        return "INR"
+    return None
+
+
+def _detect_document_focal_period(text: str) -> str | None:
+    """Detects focal reporting fiscal year from standard cover/header disclosure."""
+    match = re.search(
+        r"(?:Current\s+Period|Fiscal\s+Year|Year\s+Ended)\s*[:\n\r\-]*\s*(?:FY\s*)?((?:19|20)\d{2})",
+        text[:5000],
+        re.IGNORECASE,
+    )
+    if match:
+        return match.group(1)
+    match = re.search(
+        r"(?:year|period)\s+ended\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+((?:19|20)\d{2})",
+        text[:5000],
+        re.IGNORECASE,
+    )
+    if match:
+        return match.group(1)
+    return None
+
+
+def _detect_document_unit(text: str) -> str | None:
+    """Detects document-level primary unit scale from header metadata."""
+    match = re.search(
+        r"(?:Primary\s+Unit|Reporting\s+Unit|Scale)\s*[:\n\r\-]*\s*(?:[^\w\n\r]*\s*)?(million|billion|thousand)",
+        text[:5000],
+        re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).lower()
+    return None
+
+
+def _resolve_currency(
+    candidate: AmountCandidate,
+    source_context: str,
+    doc_currency: str | None = None,
+) -> str | None:
     if candidate.currency is not None:
         return candidate.currency
-    if "$" in candidate.original_text and re.search(
-        r"(?<!\w)USD(?!\w)",
-        source_context,
-        re.IGNORECASE,
-    ):
+    if re.search(r"(?<!\w)USD(?!\w)", source_context, re.IGNORECASE):
         return "USD"
+    if re.search(r"(?<!\w)EUR(?!\w)|€", source_context, re.IGNORECASE):
+        return "EUR"
+    if re.search(r"(?<!\w)GBP(?!\w)|£", source_context, re.IGNORECASE):
+        return "GBP"
+    if re.search(r"(?<!\w)INR(?!\w)|[₹■]", source_context, re.IGNORECASE):
+        return "INR"
+    if doc_currency is not None:
+        if "$" in candidate.original_text or "$" in source_context:
+            if doc_currency == "USD":
+                return "USD"
+        elif any(sym in candidate.original_text or sym in source_context for sym in ("■", "₹")):
+            if doc_currency == "INR":
+                return "INR"
+        else:
+            return doc_currency
     return None
 
 
@@ -378,6 +458,10 @@ def _metric_confidence_score(metric: FinancialMetric) -> float:
 
 def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse:
     lines = _normalize_lines(text)
+    doc_currency = _detect_document_currency(text)
+    doc_focal_period = _detect_document_focal_period(text)
+    doc_unit = _detect_document_unit(text)
+
     raw_metrics: list[FinancialMetric] = []
     active_table_scale: str | None = None
     active_column_years: list[str] | None = None
@@ -389,12 +473,23 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
                 active_table_scale = scale_name
                 break
 
-        # Track column year headers or single year headers (e.g. "December 31, 2025" or "2025    2024" or "2025")
+        # Track column year headers (single line with 2+ years, or consecutive single-year header lines)
         years = YEAR_PATTERN.findall(line)
-        if (len(years) >= 2 and len(re.findall(r"[a-zA-Z]", line)) <= 15) or (
-            len(years) == 1 and line.strip() in {years[0], f"December 31, {years[0]}"}
-        ):
+        if len(years) >= 2 and len(re.findall(r"[a-zA-Z]", line)) <= 25:
             active_column_years = years
+        elif (
+            len(years) == 1
+            and not _matching_definitions(line)
+            and line_index + 1 < len(lines)
+        ):
+            next_line_years = YEAR_PATTERN.findall(lines[line_index + 1])
+            if (
+                len(next_line_years) == 1
+                and not _matching_definitions(lines[line_index + 1])
+                and len(re.findall(r"[a-zA-Z]", line)) <= 15
+                and len(re.findall(r"[a-zA-Z]", lines[line_index + 1])) <= 15
+            ):
+                active_column_years = [years[0], next_line_years[0]]
 
         if _is_excluded(line):
             continue
@@ -410,17 +505,22 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
         candidates = [c for c in all_candidates if c.start_pos >= label_match.start()]
         source_context = line
 
+        # If metric label was on its own line in a vertical table structure, assemble following table row lines
         if not candidates and line_index + 1 < len(lines):
             if _contains_percentage(line):
                 continue
-            next_line = lines[line_index + 1]
-            next_candidates = _amount_candidates(next_line)
-            if len(next_candidates) == 1 and _is_standalone_amount_line(
-                next_line,
-                next_candidates[0],
-            ):
-                candidates = next_candidates
-                source_context = f"{line} {next_line}"
+            block = [line]
+            for offset in range(1, 4):
+                if line_index + offset < len(lines):
+                    next_l = lines[line_index + offset]
+                    if _matching_definitions(next_l) or _is_excluded(next_l):
+                        break
+                    block.append(next_l)
+            combined = " ".join(block)
+            combined_cands = _amount_candidates(combined)
+            if combined_cands:
+                candidates = combined_cands
+                source_context = combined
 
         if not candidates:
             continue
@@ -432,11 +532,13 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
             if (
                 not line.rstrip().endswith(".")
                 and (active_table_scale is not None or active_column_years is not None)
-                and ("$" in line or "," in selected_candidate.original_text)
+                and ("$" in source_context or "■" in source_context or "₹" in source_context or "," in selected_candidate.original_text)
             ):
                 is_table_row = True
         elif len(candidates) > 1 and ":" not in line and (
-            "$" in line
+            "$" in source_context
+            or "■" in source_context
+            or "₹" in source_context
             or "," in candidates[0].original_text
             or "(" in candidates[0].original_text
         ):
@@ -449,17 +551,25 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
 
         candidate = selected_candidate
 
-        # Table scale inheritance: if in a table where scale was stated (e.g. in thousands)
-        # and candidate has no explicit unit and is not a per-share metric
-        if is_table_row and candidate.unit is None and active_table_scale is not None:
-            if definition.name != "earnings_per_share":
-                candidate = AmountCandidate(
-                    value=candidate.value,
-                    original_text=candidate.original_text,
-                    currency=candidate.currency,
-                    unit=active_table_scale,
-                    start_pos=candidate.start_pos,
-                )
+        # Unit resolution: explicit unit -> source context unit -> table scale -> document default unit
+        cand_unit = candidate.unit
+        if cand_unit is None and definition.name != "earnings_per_share":
+            for u in ("million", "billion", "thousand"):
+                if re.search(r"\b" + u + r"s?\b", source_context, re.IGNORECASE):
+                    cand_unit = u
+                    break
+            if cand_unit is None and is_table_row and active_table_scale is not None:
+                cand_unit = active_table_scale
+            if cand_unit is None and doc_unit is not None:
+                cand_unit = doc_unit
+
+        candidate = AmountCandidate(
+            value=candidate.value,
+            original_text=candidate.original_text,
+            currency=candidate.currency,
+            unit=cand_unit,
+            start_pos=candidate.start_pos,
+        )
 
         # Handle explicit Net Loss, Operating Loss, or Cash Outflow ("cash used in") negation
         if candidate.value > 0 and re.search(
@@ -483,13 +593,15 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
             reporting_period = str(max(int(y) for y in reporting_periods))
         elif is_table_row and active_column_years:
             reporting_period = active_column_years[0]
+        elif doc_focal_period is not None:
+            reporting_period = doc_focal_period
 
         raw_metrics.append(
             FinancialMetric(
                 metric_name=definition.name,
                 value=candidate.value,
                 original_reported_text=candidate.original_text,
-                currency=_resolve_currency(candidate, source_context),
+                currency=_resolve_currency(candidate, source_context, doc_currency),
                 unit=candidate.unit,
                 reporting_period=reporting_period,
                 source_context=source_context,

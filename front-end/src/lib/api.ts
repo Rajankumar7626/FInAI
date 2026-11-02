@@ -1,3 +1,5 @@
+export type CurrencyCode = 'USD' | 'EUR' | 'GBP' | 'INR'
+
 export type HealthResponse = {
   status: string
   service: string
@@ -19,7 +21,7 @@ export type FinancialMetric = {
   metric_name: string
   value: number
   original_reported_text: string
-  currency: 'USD' | 'EUR' | 'GBP' | null
+  currency: CurrencyCode | null
   unit: 'thousand' | 'million' | 'billion' | null
   reporting_period: string | null
   source_context: string
@@ -34,7 +36,7 @@ export type FinancialDataResponse = {
 export type RiskMetricReference = {
   metric_name: string
   value: number
-  currency: 'USD' | 'EUR' | 'GBP' | null
+  currency: CurrencyCode | null
   unit: 'thousand' | 'million' | 'billion' | null
   reporting_period: string | null
   source_context: string
@@ -65,11 +67,11 @@ export type ComparedMetric = {
   second_evidence: string | null
   absolute_difference: number | null
   percentage_change: number | null
-  currency: 'USD' | 'EUR' | 'GBP' | null
+  currency: CurrencyCode | null
   unit: 'thousand' | 'million' | 'billion' | null
   reporting_period: string | null
-  first_currency: 'USD' | 'EUR' | 'GBP' | null
-  second_currency: 'USD' | 'EUR' | 'GBP' | null
+  first_currency: CurrencyCode | null
+  second_currency: CurrencyCode | null
   first_unit: 'thousand' | 'million' | 'billion' | null
   second_unit: 'thousand' | 'million' | 'billion' | null
   first_reporting_period: string | null

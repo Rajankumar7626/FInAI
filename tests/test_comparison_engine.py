@@ -293,3 +293,51 @@ def test_compare_endpoint_rejects_invalid_request_body() -> None:
 
     assert response.status_code == 422
     assert response.json() == {"detail": "Validation error"}
+
+
+def test_cross_currency_comparison_preserves_per_document_currencies_and_periods() -> None:
+    first = FinancialDataResponse(
+        document_id="doc-inr",
+        metrics=[
+            FinancialMetric(
+                metric_name="revenue",
+                value=187472.0,
+                original_reported_text="187,472",
+                currency="INR",
+                unit="million",
+                reporting_period="2026",
+                source_context="Revenue 187,472 ■ million",
+                extraction_method="deterministic_label_value_rule",
+            )
+        ],
+    )
+    second = FinancialDataResponse(
+        document_id="doc-usd",
+        metrics=[
+            FinancialMetric(
+                metric_name="revenue",
+                value=219.0,
+                original_reported_text="$219.0 million",
+                currency="USD",
+                unit="million",
+                reporting_period="2025",
+                source_context="Total revenues were $219.0 million",
+                extraction_method="deterministic_label_value_rule",
+            )
+        ],
+    )
+    result = compare_financial_data(first, second)
+    revenue = next(m for m in result.metrics if m.metric_name == "revenue")
+
+    assert revenue.comparison_status == "incomparable"
+    assert revenue.first_value == 187472.0
+    assert revenue.first_currency == "INR"
+    assert revenue.first_unit == "million"
+    assert revenue.first_reporting_period == "2026"
+
+    assert revenue.second_value == 219.0
+    assert revenue.second_currency == "USD"
+    assert revenue.second_unit == "million"
+    assert revenue.second_reporting_period == "2025"
+
+    assert revenue.limitation == "Comparison withheld because currencies are incompatible."

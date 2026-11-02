@@ -70,13 +70,16 @@ class DocumentDeleteResponse(BaseModel):
     deleted: bool
 
 
+CurrencyCode = Literal["USD", "EUR", "GBP", "INR"]
+
+
 class FinancialMetric(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metric_name: FinancialMetricName
     value: StrictFloat = Field(..., allow_inf_nan=False)
     original_reported_text: str = Field(..., min_length=1)
-    currency: Literal["USD", "EUR", "GBP"] | None = None
+    currency: CurrencyCode | None = None
     unit: Literal["thousand", "million", "billion"] | None = None
     reporting_period: str | None = Field(
         default=None,
@@ -179,7 +182,7 @@ class RiskMetricReference(BaseModel):
 
     metric_name: FinancialMetricName
     value: StrictFloat = Field(..., allow_inf_nan=False)
-    currency: Literal["USD", "EUR", "GBP"] | None = None
+    currency: CurrencyCode | None = None
     unit: Literal["thousand", "million", "billion"] | None = None
     reporting_period: str | None = Field(
         default=None,
@@ -238,14 +241,14 @@ class ComparedMetric(BaseModel):
     second_evidence: str | None = None
     absolute_difference: StrictFloat | None = Field(default=None, allow_inf_nan=False)
     percentage_change: StrictFloat | None = Field(default=None, allow_inf_nan=False)
-    currency: Literal["USD", "EUR", "GBP"] | None = None
+    currency: CurrencyCode | None = None
     unit: Literal["thousand", "million", "billion"] | None = None
     reporting_period: str | None = Field(
         default=None,
         pattern=r"^(?:19|20)\d{2}$",
     )
-    first_currency: Literal["USD", "EUR", "GBP"] | None = None
-    second_currency: Literal["USD", "EUR", "GBP"] | None = None
+    first_currency: CurrencyCode | None = None
+    second_currency: CurrencyCode | None = None
     first_unit: Literal["thousand", "million", "billion"] | None = None
     second_unit: Literal["thousand", "million", "billion"] | None = None
     first_reporting_period: str | None = Field(

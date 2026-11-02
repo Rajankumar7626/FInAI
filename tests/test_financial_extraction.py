@@ -340,3 +340,60 @@ Total stockholders’ equity     271,022       246,037
     assert metrics_map["stockholders_equity"].value == 271022.0
     assert metrics_map["stockholders_equity"].unit == "thousand"
     assert metrics_map["stockholders_equity"].reporting_period == "2025"
+
+
+def test_extracts_inr_currency_and_vertical_table_layout() -> None:
+    text = """
+Company Aurelia Industrial Holdings Ltd.
+Current Period FY2026 — year ended 31 March 2026
+Comparative Period FY2025 — year ended 31 March 2025
+Currency INR (■)
+Primary Unit ■ million
+
+1. Consolidated Income Statement
+ Metric
+FY2026
+FY2025
+Unit
+Revenue
+187,472
+176,320
+■ million
+Operating income
+16,137
+13,700
+■ million
+Net income
+9,021
+7,504
+■ million
+Diluted EPS
+17.82
+14.82
+■ per share
+"""
+    result = extract_financial_data("doc-inr-fixture", text)
+    metrics_map = {m.metric_name: m for m in result.metrics}
+
+    assert "revenue" in metrics_map
+    assert metrics_map["revenue"].value == 187472.0
+    assert metrics_map["revenue"].currency == "INR"
+    assert metrics_map["revenue"].unit == "million"
+    assert metrics_map["revenue"].reporting_period == "2026"
+
+    assert "operating_profit" in metrics_map
+    assert metrics_map["operating_profit"].value == 16137.0
+    assert metrics_map["operating_profit"].currency == "INR"
+    assert metrics_map["operating_profit"].unit == "million"
+    assert metrics_map["operating_profit"].reporting_period == "2026"
+
+    assert "net_income" in metrics_map
+    assert metrics_map["net_income"].value == 9021.0
+    assert metrics_map["net_income"].currency == "INR"
+    assert metrics_map["net_income"].unit == "million"
+    assert metrics_map["net_income"].reporting_period == "2026"
+
+    assert "earnings_per_share" in metrics_map
+    assert metrics_map["earnings_per_share"].value == 17.82
+    assert metrics_map["earnings_per_share"].currency == "INR"
+    assert metrics_map["earnings_per_share"].reporting_period == "2026"
