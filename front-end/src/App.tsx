@@ -518,7 +518,7 @@ function Workspace({
           />
         )}
 
-        {activeView === 'history' && <HistoryView />}
+        {activeView === 'history' && <HistoryView onNavigate={setActiveView} />}
 
         {activeView === 'settings' && (
           <SettingsView userLabel={userLabel} apiBaseUrl={API_BASE_URL} />
