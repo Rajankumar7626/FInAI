@@ -484,10 +484,19 @@ function Workspace({
 
         {activeView === 'risk' && (
           <RiskView
-            riskData={riskData}
+            documents={documents}
+            selectedId={selectedId}
             selectedDocument={selectedDocument}
+            riskData={riskData}
+            financialData={financialData}
             state={analysisState}
             message={analysisMessage}
+            onSelect={selectDocument}
+            onNavigate={setActiveView}
+            onInvestigate={(q) => {
+              setResearchQuery(q)
+              setActiveView('research')
+            }}
           />
         )}
 
