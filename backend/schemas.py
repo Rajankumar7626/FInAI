@@ -243,3 +243,30 @@ class ResearchReportResponse(BaseModel):
     missing_information: list[str]
     limitations: list[str]
     methodology: ReportMethodology
+
+
+class ResearchQuestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(..., min_length=1, max_length=1000)
+
+
+class EvidenceCitation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    excerpt: str = Field(..., min_length=1)
+    relevance_score: float = Field(..., ge=0.0, le=1.0)
+    matched_term: str | None = None
+
+
+class ResearchQuestionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str = Field(..., min_length=1)
+    question: str = Field(..., min_length=1)
+    answer: str = Field(..., min_length=1)
+    status: Literal["answered", "insufficient_evidence", "not_found"]
+    analysis_mode: Literal["gemini_ai", "deterministic_offline"] = "deterministic_offline"
+    relevant_metrics: list[FinancialMetric] = Field(default_factory=list)
+    citations: list[EvidenceCitation] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)

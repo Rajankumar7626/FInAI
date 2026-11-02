@@ -6,7 +6,12 @@ from functools import lru_cache
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jwt import PyJWKClient, PyJWKClientConnectionError, PyJWTError
+from jwt import (
+    PyJWKClient,
+    PyJWKClientConnectionError,
+    PyJWKClientError,
+    PyJWTError,
+)
 
 from backend.config import settings
 
@@ -27,16 +32,21 @@ def _jwks_client(domain: str) -> PyJWKClient:
 def get_current_principal(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> Principal:
+    if settings.dev_mock_auth and credentials is not None and credentials.credentials == "dev-mock-token":
+        return Principal(subject="dev|local-developer")
+
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="A valid bearer access token is required.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise unauthorized
 
     domain = settings.auth0_domain
     audience = settings.auth0_audience
+
     if not domain or not audience:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -44,8 +54,14 @@ def get_current_principal(
         )
 
     issuer = f"https://{domain}/"
+
     try:
-        signing_key = _jwks_client(domain).get_signing_key_from_jwt(credentials.credentials).key
+        signing_key = (
+            _jwks_client(domain)
+            .get_signing_key_from_jwt(credentials.credentials)
+            .key
+        )
+
         claims = jwt.decode(
             credentials.credentials,
             signing_key,
@@ -54,14 +70,21 @@ def get_current_principal(
             issuer=issuer,
             options={"require": ["exp", "iat", "sub", "iss", "aud"]},
         )
+
         subject = claims.get("sub")
+
         if not isinstance(subject, str) or not subject.strip():
             raise unauthorized
+
     except PyJWKClientConnectionError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Identity provider keys are temporarily unavailable.",
         ) from None
+
+    except PyJWKClientError:
+        raise unauthorized from None
+
     except (PyJWTError, ValueError, TypeError):
         raise unauthorized from None
 

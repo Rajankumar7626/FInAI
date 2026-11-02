@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Auth0Provider } from '@auth0/auth0-react'
 import './index.css'
+
 import App from './App.tsx'
 import { Auth0SessionBridge } from './lib/session'
 import { TestSessionProvider } from './lib/e2eSession'
@@ -10,10 +11,11 @@ const root = createRoot(document.getElementById('root')!)
 const domain = (import.meta.env.VITE_AUTH0_DOMAIN ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '')
 const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID ?? ''
 const audience = import.meta.env.VITE_AUTH0_AUDIENCE ?? ''
+const isMockAuth = import.meta.env.DEV && (import.meta.env.MODE === 'e2e' || import.meta.env.VITE_DEV_MOCK_AUTH === 'true')
 
 root.render(
   <StrictMode>
-    {import.meta.env.MODE === 'e2e' ? (
+    {isMockAuth ? (
       <TestSessionProvider><App /></TestSessionProvider>
     ) : domain && clientId && audience ? (
       <Auth0Provider

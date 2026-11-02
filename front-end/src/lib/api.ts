@@ -106,6 +106,23 @@ export type ResearchReportResponse = {
   }
 }
 
+export type EvidenceCitation = {
+  excerpt: string
+  relevance_score: number
+  matched_term: string | null
+}
+
+export type ResearchQuestionResponse = {
+  document_id: string
+  question: string
+  answer: string
+  status: 'answered' | 'insufficient_evidence' | 'not_found'
+  analysis_mode: 'gemini_ai' | 'deterministic_offline'
+  relevant_metrics: FinancialMetric[]
+  citations: EvidenceCitation[]
+  limitations: string[]
+}
+
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8000'
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '')
 let accessTokenProvider: (() => Promise<string>) | null = null
@@ -197,6 +214,17 @@ export function getFinancialData(documentId: string): Promise<FinancialDataRespo
 export function getRiskAnalysis(documentId: string): Promise<RiskAnalysisResponse> {
   return request<RiskAnalysisResponse>(`/documents/${documentId}/risk-analysis`, {
     method: 'POST',
+  })
+}
+
+export function askDocumentQuestion(
+  documentId: string,
+  question: string,
+): Promise<ResearchQuestionResponse> {
+  return request<ResearchQuestionResponse>(`/documents/${documentId}/ask`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
   })
 }
 

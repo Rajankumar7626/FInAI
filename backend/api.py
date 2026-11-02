@@ -11,6 +11,7 @@ from backend.comparison_engine import compare_financial_data
 from backend.document_service import DocumentProcessingError, process_document
 from backend.document_registry import DocumentCapacityError, DocumentRecord, document_registry
 from backend.financial_extraction import extract_financial_data
+from backend.research_service import answer_financial_question
 from backend.risk_engine import analyze_financial_risk
 from backend.report_service import generate_research_report
 from backend.schemas import (
@@ -23,6 +24,8 @@ from backend.schemas import (
     ErrorResponse,
     FinancialDataResponse,
     HealthResponse,
+    ResearchQuestionRequest,
+    ResearchQuestionResponse,
     RiskAnalysisResponse,
     ReportGenerationRequest,
     ResearchReportResponse,
@@ -145,6 +148,21 @@ def analyze_document_risk(document_id: str, principal: Principal = Depends(get_c
         raise HTTPException(status_code=404, detail="Document not found.")
     financial_data = extract_financial_data(document.document_id, document.extracted_text)
     return analyze_financial_risk(financial_data)
+
+
+@app.post(
+    "/documents/{document_id}/ask",
+    response_model=ResearchQuestionResponse,
+)
+def ask_document_question(
+    document_id: str,
+    request: ResearchQuestionRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> ResearchQuestionResponse:
+    document = document_registry.get_owned(document_id, principal.subject)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    return answer_financial_question(document.document_id, document.extracted_text, request.question)
 
 
 @app.post("/documents/compare", response_model=ComparisonResponse)

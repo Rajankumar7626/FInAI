@@ -3,6 +3,7 @@ import { useAuthSession } from './lib/authContext'
 import './App.css'
 import {
   ApiError,
+  askDocumentQuestion,
   compareDocuments,
   deleteDocument,
   generateReport,
@@ -16,17 +17,20 @@ import {
   type DocumentMetadata,
   type DocumentText,
   type FinancialDataResponse,
+  type ResearchQuestionResponse,
   type ResearchReportResponse,
   type RiskAnalysisResponse,
   uploadDocument,
 } from './lib/api'
 
-type View = 'dashboard' | 'documents' | 'risk' | 'comparison' | 'reports'
+type View = 'dashboard' | 'documents' | 'financials' | 'research' | 'risk' | 'comparison' | 'reports'
 type RequestState = 'idle' | 'loading' | 'success' | 'error'
 
 const navigation: { id: View; label: string; short: string }[] = [
   { id: 'dashboard', label: 'Dashboard', short: 'DB' },
   { id: 'documents', label: 'Documents', short: 'DOC' },
+  { id: 'financials', label: 'Financials', short: 'FIN' },
+  { id: 'research', label: 'Research Q&A', short: 'Q&A' },
   { id: 'risk', label: 'Risk analysis', short: 'RISK' },
   { id: 'comparison', label: 'Comparison', short: 'CMP' },
   { id: 'reports', label: 'Reports', short: 'RPT' },
@@ -63,29 +67,19 @@ function App() {
 
           {(error || loginFailed) && (
             <div className="notice error" role="alert">
-              Sign-in could not be completed. Please try again.
+              {error?.message ? `Sign-in error: ${error.message}` : 'Sign-in could not be completed. Please try again.'}
             </div>
           )}
 
-          {/* Auth0 diagnostic login button */}
           <button
             type="button"
             className="primary-button"
             onClick={async () => {
               setLoginFailed(false)
-
               try {
-                console.info('Starting Auth0 login redirect...')
                 await loginWithRedirect()
-              } catch (error: unknown) {
-                console.error('Auth0 loginWithRedirect failed:', error)
-
-                if (error instanceof Error) {
-                  console.error('Error name:', error.name)
-                  console.error('Error message:', error.message)
-                  console.error('Error stack:', error.stack)
-                }
-
+              } catch (err: unknown) {
+                console.error('Auth0 loginWithRedirect failed:', err)
                 setLoginFailed(true)
               }
             }}
@@ -121,7 +115,7 @@ function Workspace({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [secondId, setSecondId] = useState('')
   const [healthState, setHealthState] = useState<RequestState>('loading')
-  const [healthMessage, setHealthMessage] = useState('Connecting to the local analysis API...')
+  const [healthMessage, setHealthMessage] = useState('Connecting to the analysis API...')
   const [documentState, setDocumentState] = useState<RequestState>('loading')
   const [documentMessage, setDocumentMessage] = useState('Loading document workspace...')
   const [selectedText, setSelectedText] = useState<DocumentText | null>(null)
@@ -135,6 +129,12 @@ function Workspace({
   const [uploadState, setUploadState] = useState<RequestState>('idle')
   const [uploadMessage, setUploadMessage] = useState('')
 
+  // Research Q&A state
+  const [researchQuery, setResearchQuery] = useState('')
+  const [researchResponse, setResearchResponse] = useState<ResearchQuestionResponse | null>(null)
+  const [researchState, setResearchState] = useState<RequestState>('idle')
+  const [researchMessage, setResearchMessage] = useState('Ask any financial question about the selected report.')
+
   const clearUserData = useCallback(() => {
     setDocuments([])
     setSelectedId(null)
@@ -144,6 +144,8 @@ function Workspace({
     setRiskData(null)
     setComparison(null)
     setReport(null)
+    setResearchResponse(null)
+    setResearchQuery('')
     setTextOpen(false)
     setUploadState('idle')
     setUploadMessage('')
@@ -164,102 +166,79 @@ function Workspace({
       () => getAccessTokenSilently(),
       handleLogout,
     )
-
     return () => setApiAuthentication(null)
   }, [getAccessTokenSilently, handleLogout])
 
   const selectedDocument = useMemo(
-    () => documents.find((document) => document.document_id === selectedId) ?? null,
+    () => documents.find((doc) => doc.document_id === selectedId) ?? null,
     [documents, selectedId],
   )
 
   const refreshDocuments = useCallback(async (preferredId?: string) => {
     setDocumentState('loading')
     setDocumentMessage('Loading document workspace...')
-
     try {
       const nextDocuments = await getDocuments()
       setDocuments(nextDocuments)
-
       setSelectedId((currentSelectedId) => {
-        if (preferredId && nextDocuments.some((item) => item.document_id === preferredId)) {
-          return preferredId
-        }
-
-        if (currentSelectedId && nextDocuments.some((item) => item.document_id === currentSelectedId)) {
-          return currentSelectedId
-        }
-
+        if (preferredId && nextDocuments.some((item) => item.document_id === preferredId)) return preferredId
+        if (currentSelectedId && nextDocuments.some((item) => item.document_id === currentSelectedId)) return currentSelectedId
         return nextDocuments[0]?.document_id ?? null
       })
-
-      setSecondId((current) =>
-        current && nextDocuments.some((item) => item.document_id === current)
-          ? current
-          : '',
-      )
-
+      setSecondId((current) => current && nextDocuments.some((item) => item.document_id === current) ? current : '')
       setDocumentState('success')
       setDocumentMessage(
         nextDocuments.length
           ? `${nextDocuments.length} document${nextDocuments.length === 1 ? '' : 's'} in workspace.`
           : 'No documents uploaded yet.',
       )
-    } catch (error) {
+    } catch (err) {
       setDocumentState('error')
-      setDocumentMessage(getErrorMessage(error))
+      setDocumentMessage(getErrorMessage(err))
     }
   }, [])
 
   const checkHealth = useCallback(async () => {
     setHealthState('loading')
-    setHealthMessage('Connecting to the local analysis API...')
-
+    setHealthMessage('Connecting to the analysis API...')
     try {
       const health = await getHealth()
       setHealthState('success')
       setHealthMessage(`${health.service} is responding normally.`)
-    } catch (error) {
+    } catch (err) {
       setHealthState('error')
-      setHealthMessage(getErrorMessage(error))
+      setHealthMessage(getErrorMessage(err))
     }
   }, [])
 
   useEffect(() => {
     let active = true
-
     void Promise.resolve().then(() => {
       if (!active) return
       void checkHealth()
       void refreshDocuments()
     })
-
     return () => {
       active = false
     }
   }, [checkHealth, refreshDocuments])
 
   useEffect(() => {
-    if (!selectedId) {
-      return
-    }
+    if (!selectedId) return
 
     let cancelled = false
-
     Promise.all([getFinancialData(selectedId), getRiskAnalysis(selectedId)])
       .then(([facts, risks]) => {
         if (cancelled) return
-
         setFinancialData(facts)
         setRiskData(risks)
         setAnalysisState('success')
         setAnalysisMessage('Analysis refreshed from the registered document text.')
       })
-      .catch((error) => {
+      .catch((err) => {
         if (cancelled) return
-
         setAnalysisState('error')
-        setAnalysisMessage(getErrorMessage(error))
+        setAnalysisMessage(getErrorMessage(err))
       })
 
     return () => {
@@ -274,22 +253,20 @@ function Workspace({
     setSelectedText(null)
     setComparison(null)
     setReport(null)
+    setResearchResponse(null)
     setAnalysisState('loading')
     setAnalysisMessage('Extracting financial facts and evaluating deterministic indicators...')
   }
 
   async function handleUpload(file: File | undefined) {
     if (!file) return
-
     if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       setUploadState('error')
       setUploadMessage('Please choose a PDF file.')
       return
     }
-
     setUploadState('loading')
     setUploadMessage('Uploading and extracting text...')
-
     try {
       const uploaded = await uploadDocument(file)
       await refreshDocuments(uploaded.document_id)
@@ -297,19 +274,15 @@ function Workspace({
       setUploadState('success')
       setUploadMessage(`${uploaded.filename} is ready for analysis.`)
       setActiveView('documents')
-    } catch (error) {
+    } catch (err) {
       setUploadState('error')
-      setUploadMessage(getErrorMessage(error))
+      setUploadMessage(getErrorMessage(err))
     }
   }
 
   async function handleDelete() {
     if (!selectedDocument) return
-
-    if (!window.confirm(`Delete ${selectedDocument.filename} from this session?`)) {
-      return
-    }
-
+    if (!window.confirm(`Delete ${selectedDocument.filename} from this workspace?`)) return
     try {
       await deleteDocument(selectedDocument.document_id)
       setSelectedText(null)
@@ -317,57 +290,72 @@ function Workspace({
       setRiskData(null)
       setComparison(null)
       setReport(null)
+      setResearchResponse(null)
       await refreshDocuments()
-    } catch (error) {
+    } catch (err) {
       setDocumentState('error')
-      setDocumentMessage(getErrorMessage(error))
+      setDocumentMessage(getErrorMessage(err))
     }
   }
 
   async function viewExtractedText() {
     if (!selectedId) return
-
     setTextOpen(true)
-
     try {
       setSelectedText(await getDocumentText(selectedId))
-    } catch (error) {
+    } catch (err) {
       setAnalysisState('error')
-      setAnalysisMessage(getErrorMessage(error))
+      setAnalysisMessage(getErrorMessage(err))
+    }
+  }
+
+  async function handleAskQuestion(customQuery?: string) {
+    const q = customQuery ?? researchQuery
+    if (!selectedId || !q.trim()) return
+    setResearchState('loading')
+    setResearchMessage('Analyzing document disclosures and verifying citations...')
+    try {
+      const res = await askDocumentQuestion(selectedId, q.trim())
+      setResearchResponse(res)
+      setResearchState('success')
+      setResearchMessage(
+        res.status === 'answered'
+          ? 'Answer generated with grounded citations.'
+          : 'Insufficient evidence in document disclosures.',
+      )
+    } catch (err) {
+      setResearchState('error')
+      setResearchMessage(getErrorMessage(err))
     }
   }
 
   async function runComparison() {
     if (!selectedId || !secondId || selectedId === secondId) return
-
     setAnalysisState('loading')
     setAnalysisMessage('Comparing compatible extracted metrics...')
-
     try {
       setComparison(await compareDocuments(selectedId, secondId))
       setActiveView('comparison')
       setAnalysisState('success')
       setAnalysisMessage('Comparison complete. Limitations are shown alongside each result.')
-    } catch (error) {
+    } catch (err) {
       setAnalysisState('error')
-      setAnalysisMessage(getErrorMessage(error))
+      setAnalysisMessage(getErrorMessage(err))
     }
   }
 
   async function runReport() {
     if (!selectedId) return
-
     setAnalysisState('loading')
     setAnalysisMessage('Assembling source facts, risk observations, and limitations...')
-
     try {
       setReport(await generateReport(selectedId, secondId || undefined))
       setActiveView('reports')
       setAnalysisState('success')
-      setAnalysisMessage('Research report generated from current session data.')
-    } catch (error) {
+      setAnalysisMessage('Research report generated from workspace data.')
+    } catch (err) {
       setAnalysisState('error')
-      setAnalysisMessage(getErrorMessage(error))
+      setAnalysisMessage(getErrorMessage(err))
     }
   }
 
@@ -386,7 +374,6 @@ function Workspace({
 
         <nav className="primary-nav" aria-label="Primary navigation">
           <span className="nav-heading">Workspace</span>
-
           {navigation.map((item) => (
             <button
               type="button"
@@ -463,6 +450,7 @@ function Workspace({
             analysisMessage={analysisMessage}
             onSelect={selectDocument}
             onNavigate={setActiveView}
+            onUpload={(file) => void handleUpload(file)}
             onViewText={() => void viewExtractedText()}
             onDelete={() => void handleDelete()}
           />
@@ -476,8 +464,35 @@ function Workspace({
             selectedId={selectedId}
             financialData={financialData}
             onSelect={selectDocument}
+            onUpload={(file) => void handleUpload(file)}
             onViewText={() => void viewExtractedText()}
             onDelete={() => void handleDelete()}
+          />
+        )}
+
+        {activeView === 'financials' && (
+          <FinancialsView
+            documents={documents}
+            selectedId={selectedId}
+            selectedDocument={selectedDocument}
+            financialData={financialData}
+            onSelect={selectDocument}
+            state={analysisState}
+            message={analysisMessage}
+          />
+        )}
+
+        {activeView === 'research' && (
+          <ResearchView
+            documents={documents}
+            selectedId={selectedId}
+            onSelect={selectDocument}
+            researchQuery={researchQuery}
+            onQueryChange={setResearchQuery}
+            onAsk={handleAskQuestion}
+            response={researchResponse}
+            state={researchState}
+            message={researchMessage}
           />
         )}
 
@@ -537,7 +552,6 @@ function Workspace({
                 <p className="section-kicker">Source document</p>
                 <h2 id="text-modal-title">Extracted text</h2>
               </div>
-
               <button
                 type="button"
                 className="icon-button"
@@ -547,7 +561,6 @@ function Workspace({
                 Close
               </button>
             </div>
-
             {selectedText ? (
               <pre>{selectedText.extracted_text}</pre>
             ) : (
@@ -556,6 +569,46 @@ function Workspace({
           </section>
         </div>
       )}
+    </div>
+  )
+}
+
+function DragDropUploadZone({
+  onUpload,
+  loading,
+}: {
+  onUpload: (file: File) => void
+  loading: boolean
+}) {
+  const [isDragging, setIsDragging] = useState(false)
+
+  return (
+    <div
+      className={`dropzone-container ${isDragging ? 'dragging' : ''}`}
+      onDragOver={(e) => {
+        e.preventDefault()
+        setIsDragging(true)
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setIsDragging(false)
+        const file = e.dataTransfer.files?.[0]
+        if (file) onUpload(file)
+      }}
+      onClick={() => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = 'application/pdf,.pdf'
+        input.onchange = (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0]
+          if (file) onUpload(file)
+        }
+        input.click()
+      }}
+    >
+      <strong>{loading ? 'Processing Document...' : 'Drag & Drop Financial PDF Here'}</strong>
+      <p>or click to browse from your device (10 MiB limit, text-based PDF)</p>
     </div>
   )
 }
@@ -570,6 +623,7 @@ function DashboardView(props: {
   analysisMessage: string
   onSelect: (id: string) => void
   onNavigate: (view: View) => void
+  onUpload: (file: File) => void
   onViewText: () => void
   onDelete: () => void
 }) {
@@ -580,17 +634,18 @@ function DashboardView(props: {
           <p className="section-kicker">Evidence-first analysis</p>
           <h2>Turn financial reports into a reviewable workspace.</h2>
           <p>
-            Upload a text-based PDF, inspect extracted facts, and move from source evidence to
-            deterministic risk and comparison outputs.
+            Upload a text-based PDF, inspect extracted facts, ask research questions, and evaluate deterministic risk and comparison indicators.
           </p>
         </div>
 
         <div className="hero-stamp">
-          <span>SESSION</span>
-          <strong>LOCAL</strong>
-          <small>No permanent storage</small>
+          <span>STORAGE</span>
+          <strong>POSTGRESQL</strong>
+          <small>Persistent & Secured</small>
         </div>
       </section>
+
+      <DragDropUploadZone onUpload={props.onUpload} loading={props.analysisState === 'loading'} />
 
       <section className="summary-grid" aria-label="Workspace summary">
         <SummaryCard
@@ -624,7 +679,6 @@ function DashboardView(props: {
           selectedId={props.selectedDocument?.document_id}
           onSelect={props.onSelect}
         />
-
         <SelectedDocumentPanel
           selectedDocument={props.selectedDocument}
           financialData={props.financialData}
@@ -644,6 +698,7 @@ function DocumentsView(props: {
   selectedId: string | null
   financialData: FinancialDataResponse | null
   onSelect: (id: string) => void
+  onUpload: (file: File) => void
   onViewText: () => void
   onDelete: () => void
 }) {
@@ -651,11 +706,13 @@ function DocumentsView(props: {
     <section className="page-stack">
       <div className="page-intro">
         <div>
-          <p className="section-kicker">Session registry</p>
+          <p className="section-kicker">Database registry</p>
           <h2>Uploaded documents</h2>
         </div>
         <span className="count-badge">{props.documents.length} active</span>
       </div>
+
+      <DragDropUploadZone onUpload={props.onUpload} loading={props.documentState === 'loading'} />
 
       <DocumentList
         documents={props.documents}
@@ -673,6 +730,298 @@ function DocumentsView(props: {
         onViewText={props.onViewText}
         onDelete={props.onDelete}
       />
+    </section>
+  )
+}
+
+function FinancialsView({
+  documents,
+  selectedId,
+  selectedDocument,
+  financialData,
+  onSelect,
+  state,
+  message,
+}: {
+  documents: DocumentMetadata[]
+  selectedId: string | null
+  selectedDocument: DocumentMetadata | null
+  financialData: FinancialDataResponse | null
+  onSelect: (id: string) => void
+  state: RequestState
+  message: string
+}) {
+  const metrics = financialData?.metrics ?? []
+  const incomeMetrics = metrics.filter((m) =>
+    ['revenue', 'net_income', 'operating_profit', 'earnings_per_share'].includes(m.metric_name),
+  )
+  const balanceSheetMetrics = metrics.filter((m) =>
+    ['total_assets', 'total_liabilities', 'total_debt', 'cash_and_cash_equivalents'].includes(m.metric_name),
+  )
+  const cashFlowMetrics = metrics.filter((m) =>
+    ['operating_cash_flow'].includes(m.metric_name),
+  )
+
+  return (
+    <section className="page-stack">
+      <div className="page-intro">
+        <div>
+          <p className="section-kicker">Financial Disclosures</p>
+          <h2>Financial Statements & Metrics</h2>
+        </div>
+        <span className="context-label">{selectedDocument?.filename ?? 'No document selected'}</span>
+      </div>
+
+      <section className="panel compare-controls">
+        <label style={{ gridColumn: '1 / -1' }}>
+          <span>Select Document</span>
+          <select value={selectedId ?? ''} onChange={(e) => onSelect(e.target.value)}>
+            <option value="">Choose a document</option>
+            {documents.map((d) => (
+              <option key={d.document_id} value={d.document_id}>
+                {d.filename}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      {state === 'loading' && <div className="panel loading-block">{message}</div>}
+      {state === 'error' && <div className="notice error">{message}</div>}
+
+      {!selectedDocument && (
+        <section className="panel">
+          <EmptyState
+            title="No report selected"
+            body="Select a document from above to view its structured financial statements."
+          />
+        </section>
+      )}
+
+      {selectedDocument && financialData && (
+        <>
+          <div className="financials-statements-grid">
+            <div className="statement-card">
+              <h3>Income Statement</h3>
+              {incomeMetrics.length ? (
+                incomeMetrics.map((m) => (
+                  <div className="statement-metric-row" key={m.metric_name}>
+                    <div>
+                      <div className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</div>
+                      <div className="statement-context">"{m.source_context}"</div>
+                    </div>
+                    <div className="statement-metric-val">{formatValue(m.value, m.currency, m.unit)}</div>
+                  </div>
+                ))
+              ) : (
+                <p className="muted-copy">No income statement figures extracted.</p>
+              )}
+            </div>
+
+            <div className="statement-card">
+              <h3>Balance Sheet</h3>
+              {balanceSheetMetrics.length ? (
+                balanceSheetMetrics.map((m) => (
+                  <div className="statement-metric-row" key={m.metric_name}>
+                    <div>
+                      <div className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</div>
+                      <div className="statement-context">"{m.source_context}"</div>
+                    </div>
+                    <div className="statement-metric-val">{formatValue(m.value, m.currency, m.unit)}</div>
+                  </div>
+                ))
+              ) : (
+                <p className="muted-copy">No balance sheet figures extracted.</p>
+              )}
+            </div>
+
+            <div className="statement-card">
+              <h3>Cash Flow & Liquidity</h3>
+              {cashFlowMetrics.length ? (
+                cashFlowMetrics.map((m) => (
+                  <div className="statement-metric-row" key={m.metric_name}>
+                    <div>
+                      <div className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</div>
+                      <div className="statement-context">"{m.source_context}"</div>
+                    </div>
+                    <div className="statement-metric-val">{formatValue(m.value, m.currency, m.unit)}</div>
+                  </div>
+                ))
+              ) : (
+                <p className="muted-copy">No cash flow figures extracted.</p>
+              )}
+            </div>
+          </div>
+
+          <section className="panel">
+            <div className="panel-heading">
+              <div>
+                <p className="section-kicker">Complete Registry</p>
+                <h2>All Disclosed Facts ({metrics.length})</h2>
+              </div>
+            </div>
+            <MetricFactList metrics={metrics} />
+          </section>
+        </>
+      )}
+    </section>
+  )
+}
+
+function ResearchView({
+  documents,
+  selectedId,
+  onSelect,
+  researchQuery,
+  onQueryChange,
+  onAsk,
+  response,
+  state,
+  message,
+}: {
+  documents: DocumentMetadata[]
+  selectedId: string | null
+  onSelect: (id: string) => void
+  researchQuery: string
+  onQueryChange: (q: string) => void
+  onAsk: (q?: string) => void
+  response: ResearchQuestionResponse | null
+  state: RequestState
+  message: string
+}) {
+  const selectedDoc = documents.find((d) => d.document_id === selectedId)
+  const suggestions = [
+    'What was the total revenue?',
+    'What is the net income or profit?',
+    'What are the debt and borrowings?',
+    'What are the financial risks or red flags?',
+    'What are the total assets and liabilities?',
+  ]
+
+  return (
+    <section className="page-stack">
+      <div className="page-intro">
+        <div>
+          <p className="section-kicker">Evidence-backed inquiry</p>
+          <h2>Financial Research Agent</h2>
+        </div>
+        <span className="context-label">{selectedDoc?.filename ?? 'No document selected'}</span>
+      </div>
+
+      <section className="panel qa-controls">
+        <label>
+          <span>Target Document</span>
+          <select value={selectedId ?? ''} onChange={(e) => onSelect(e.target.value)}>
+            <option value="">Choose a report to inspect</option>
+            {documents.map((item) => (
+              <option key={item.document_id} value={item.document_id}>
+                {item.filename}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <form
+          className="qa-input-row"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onAsk()
+          }}
+        >
+          <input
+            type="text"
+            placeholder="Ask a question about financial metrics, risks, or performance..."
+            value={researchQuery}
+            onChange={(e) => onQueryChange(e.target.value)}
+            disabled={!selectedId || state === 'loading'}
+          />
+          <button
+            type="submit"
+            className="primary-button"
+            disabled={!selectedId || !researchQuery.trim() || state === 'loading'}
+          >
+            {state === 'loading' ? 'Analyzing...' : 'Ask Agent'}
+          </button>
+        </form>
+
+        <div className="prompt-chips">
+          <span>Quick prompts:</span>
+          {suggestions.map((prompt) => (
+            <button
+              type="button"
+              key={prompt}
+              className="prompt-chip"
+              disabled={!selectedId || state === 'loading'}
+              onClick={() => {
+                onQueryChange(prompt)
+                onAsk(prompt)
+              }}
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {state === 'loading' && <div className="panel loading-block">{message}</div>}
+      {state === 'error' && <div className="notice error">{message}</div>}
+
+      {response && (
+        <article className="qa-response-card">
+          <div className="qa-header">
+            <div>
+              <p className="section-kicker">Research Synthesis</p>
+              <h3>{response.question}</h3>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <span
+                className="qa-status-chip"
+                style={{
+                  background: response.analysis_mode === 'gemini_ai' ? '#e3f2fd' : '#f0f4f2',
+                  color: response.analysis_mode === 'gemini_ai' ? '#0d47a1' : '#2d4b3e',
+                }}
+              >
+                {response.analysis_mode === 'gemini_ai' ? '🤖 Gemini AI' : '⚡ Offline Engine'}
+              </span>
+              <span className={`qa-status-chip ${response.status}`}>
+                {response.status === 'answered' ? 'Evidence Verified' : 'Insufficient Disclosures'}
+              </span>
+            </div>
+          </div>
+
+          <p className="qa-answer">{response.answer}</p>
+
+          {response.relevant_metrics.length > 0 && (
+            <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+              <p className="section-kicker">Extracted Metric Facts</p>
+              <MetricFactList metrics={response.relevant_metrics} />
+            </div>
+          )}
+
+          {response.citations.length > 0 && (
+            <div style={{ marginTop: '16px' }}>
+              <p className="section-kicker">Source Evidence Citations</p>
+              <div className="citation-list">
+                {response.citations.map((cite, idx) => (
+                  <div className="citation-card" key={idx}>
+                    <p>"{cite.excerpt}"</p>
+                    <div className="citation-meta">
+                      <span>Relevance: {Math.round(cite.relevance_score * 100)}%</span>
+                      {cite.matched_term && <span>Matched: {cite.matched_term}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {response.limitations.length > 0 && (
+            <div style={{ marginTop: '16px' }}>
+              <Limitations items={response.limitations} />
+            </div>
+          )}
+        </article>
+      )}
     </section>
   )
 }
@@ -700,9 +1049,7 @@ function DocumentList({
         <span className="count-badge">{documents.length}</span>
       </div>
 
-      {documentState === 'loading' && (
-        <div className="loading-block">{documentMessage}</div>
-      )}
+      {documentState === 'loading' && <div className="loading-block">{documentMessage}</div>}
 
       {documentState !== 'loading' && documents.length === 0 && (
         <EmptyState
@@ -712,26 +1059,21 @@ function DocumentList({
       )}
 
       <div className="document-list">
-        {documents.map((document) => (
+        {documents.map((doc) => (
           <button
             type="button"
-            className={`document-row ${
-              selectedId === document.document_id ? 'selected' : ''
-            }`}
-            key={document.document_id}
-            onClick={() => onSelect(document.document_id)}
+            className={`document-row ${selectedId === doc.document_id ? 'selected' : ''}`}
+            key={doc.document_id}
+            onClick={() => onSelect(doc.document_id)}
           >
             <span className="file-token">PDF</span>
-
             <span className="document-row-main">
-              <strong>{document.filename}</strong>
+              <strong>{doc.filename}</strong>
               <small>
-                {document.page_count} page
-                {document.page_count === 1 ? '' : 's'} /{' '}
-                {document.extracted_character_count.toLocaleString()} characters
+                {doc.page_count} page{doc.page_count === 1 ? '' : 's'} /{' '}
+                {doc.extracted_character_count.toLocaleString()} characters
               </small>
             </span>
-
             <span className="row-arrow">Open</span>
           </button>
         ))}
@@ -758,7 +1100,7 @@ function SelectedDocumentPanel({
       <section className="panel detail-panel">
         <EmptyState
           title="Select a document"
-          body="Choose a source from the library to inspect metrics and deterministic risk indicators."
+          body="Choose a source from the library to inspect metrics, ask questions, and evaluate risk indicators."
         />
       </section>
     )
@@ -786,8 +1128,7 @@ function SelectedDocumentPanel({
       </div>
 
       <p className="muted-copy">
-        This session keeps extracted content in memory only. Use the source text action when
-        you need to verify a metric.
+        Extracted metrics and analysis are persisted in your encrypted PostgreSQL database.
       </p>
 
       {financialData && <MetricFactList metrics={financialData.metrics.slice(0, 4)} />}
@@ -807,18 +1148,16 @@ function SelectedDocumentPanel({
 
       {onNavigate && (
         <div className="action-row secondary-actions">
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => onNavigate('risk')}
-          >
+          <button type="button" className="link-button" onClick={() => onNavigate('financials')}>
+            View all financials
+          </button>
+          <button type="button" className="link-button" onClick={() => onNavigate('research')}>
+            Ask Research Agent
+          </button>
+          <button type="button" className="link-button" onClick={() => onNavigate('risk')}>
             Open risk analysis
           </button>
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => onNavigate('reports')}
-          >
+          <button type="button" className="link-button" onClick={() => onNavigate('reports')}>
             Generate report
           </button>
         </div>
@@ -851,7 +1190,6 @@ function RiskView({
       </div>
 
       {state === 'loading' && <div className="panel loading-block">{message}</div>}
-
       {state === 'error' && <div className="notice error">{message}</div>}
 
       {riskData && (
@@ -878,6 +1216,78 @@ function RiskView({
   )
 }
 
+function ComparisonVisualChart({
+  comparison,
+  firstName,
+  secondName,
+}: {
+  comparison: ComparisonResponse
+  firstName: string
+  secondName: string
+}) {
+  const comparableMetrics = comparison.metrics.filter(
+    (m) => m.comparison_status === 'comparable' && m.first_value !== null && m.second_value !== null,
+  )
+
+  if (!comparableMetrics.length) return null
+
+  return (
+    <div className="visual-comparison-card">
+      <div className="panel-heading">
+        <div>
+          <p className="section-kicker">Visual Comparison</p>
+          <h2>Relative Metric Benchmarks</h2>
+        </div>
+        <div style={{ display: 'flex', gap: '14px', fontSize: '.72rem', fontWeight: 700 }}>
+          <span style={{ color: '#3b82f6' }}>● {firstName}</span>
+          <span style={{ color: '#10b981' }}>● {secondName}</span>
+        </div>
+      </div>
+
+      <div className="chart-grid">
+        {comparableMetrics.map((metric) => {
+          const val1 = Math.abs(metric.first_value ?? 0)
+          const val2 = Math.abs(metric.second_value ?? 0)
+          const maxVal = Math.max(val1, val2) || 1
+          const pct1 = Math.round((val1 / maxVal) * 100)
+          const pct2 = Math.round((val2 / maxVal) * 100)
+
+          return (
+            <div className="chart-metric-row" key={metric.metric_name}>
+              <div className="chart-metric-header">
+                <span>{metric.display_name}</span>
+                {metric.percentage_change !== null && (
+                  <span style={{ color: metric.percentage_change >= 0 ? '#10b981' : '#ef4444' }}>
+                    {formatSigned(metric.percentage_change)}%
+                  </span>
+                )}
+              </div>
+
+              <div className="chart-bars-wrap">
+                <div className="chart-bar-item">
+                  <span className="chart-bar-label">{firstName}</span>
+                  <div className="chart-bar-track">
+                    <div className="chart-bar-fill first" style={{ width: `${pct1}%` }} />
+                  </div>
+                  <span className="chart-bar-val">{formatValue(metric.first_value, metric.currency, metric.unit)}</span>
+                </div>
+
+                <div className="chart-bar-item">
+                  <span className="chart-bar-label">{secondName}</span>
+                  <div className="chart-bar-track">
+                    <div className="chart-bar-fill second" style={{ width: `${pct2}%` }} />
+                  </div>
+                  <span className="chart-bar-val">{formatValue(metric.second_value, metric.currency, metric.unit)}</span>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function ComparisonView({
   documents,
   selectedId,
@@ -899,6 +1309,9 @@ function ComparisonView({
   state: RequestState
   message: string
 }) {
+  const firstDoc = documents.find((d) => d.document_id === selectedId)
+  const secondDoc = documents.find((d) => d.document_id === secondId)
+
   return (
     <section className="page-stack">
       <div className="page-intro">
@@ -947,10 +1360,18 @@ function ComparisonView({
       </section>
 
       {state === 'loading' && <div className="panel loading-block">{message}</div>}
-
       {state === 'error' && <div className="notice error">{message}</div>}
 
-      {comparison && <ComparisonTable comparison={comparison} />}
+      {comparison && (
+        <>
+          <ComparisonVisualChart
+            comparison={comparison}
+            firstName={firstDoc?.filename ?? 'Report A'}
+            secondName={secondDoc?.filename ?? 'Report B'}
+          />
+          <ComparisonTable comparison={comparison} />
+        </>
+      )}
     </section>
   )
 }
@@ -1010,7 +1431,6 @@ function ReportsView({
       </section>
 
       {state === 'loading' && <div className="panel loading-block">{message}</div>}
-
       {state === 'error' && <div className="notice error">{message}</div>}
 
       {report && <ReportContent report={report} />}
@@ -1125,10 +1545,7 @@ function ComparisonTable({ comparison }: { comparison: ComparisonResponse }) {
 
       <div className="comparison-list">
         {comparison.metrics.map((metric) => (
-          <article
-            className={`comparison-row ${metric.comparison_status}`}
-            key={metric.metric_name}
-          >
+          <article className={`comparison-row ${metric.comparison_status}`} key={metric.metric_name}>
             <div className="comparison-name">
               <strong>{metric.display_name}</strong>
               <span>{metric.comparison_status}</span>
@@ -1137,9 +1554,7 @@ function ComparisonTable({ comparison }: { comparison: ComparisonResponse }) {
             <div className="comparison-values">
               <span>{formatValue(metric.first_value, metric.currency, metric.unit)}</span>
               <span className="difference">
-                {metric.absolute_difference === null
-                  ? '—'
-                  : formatSigned(metric.absolute_difference)}
+                {metric.absolute_difference === null ? '—' : formatSigned(metric.absolute_difference)}
               </span>
               <span>{formatValue(metric.second_value, metric.currency, metric.unit)}</span>
             </div>
@@ -1164,6 +1579,45 @@ function ComparisonTable({ comparison }: { comparison: ComparisonResponse }) {
   )
 }
 
+function downloadReportMarkdown(report: ResearchReportResponse) {
+  let md = `# FinSight AI - Research Report\n`
+  md += `**Report ID:** ${report.report_id} | **Generated:** ${new Date(report.generated_at).toLocaleString()}\n`
+  md += `**Type:** ${report.report_type === 'single_document' ? 'Single Document Analysis' : 'Two Document Comparison'}\n\n`
+  md += `## 1. Source Document Metrics\n`
+  report.source_documents.forEach((doc) => {
+    md += `### ${doc.filename}\n`
+    if (doc.metrics.length) {
+      doc.metrics.forEach((m) => {
+        md += `- **${m.metric_name.replace(/_/g, ' ').toUpperCase()}**: ${formatValue(m.value, m.currency, m.unit)} (${m.reporting_period ?? 'N/A'})\n  Context: "${m.source_context}"\n`
+      })
+    } else {
+      md += `No supported metrics extracted.\n`
+    }
+  })
+  if (report.risk_observations.length) {
+    md += `\n## 2. Risk Observations\n`
+    report.risk_observations.forEach((obs) => {
+      md += `### [${obs.severity.toUpperCase()}] ${obs.title} (${obs.rule_id})\n${obs.explanation}\n`
+      obs.evidence.forEach((e) => {
+        md += `> Evidence: ${e}\n`
+      })
+    })
+  }
+  if (report.limitations.length) {
+    md += `\n## 3. Disclosures & Limitations\n`
+    report.limitations.forEach((lim) => {
+      md += `- ${lim}\n`
+    })
+  }
+  const blob = new Blob([md], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `finsight-report-${report.report_id.slice(0, 8)}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function ReportContent({ report }: { report: ResearchReportResponse }) {
   return (
     <div className="report-stack">
@@ -1178,6 +1632,23 @@ function ReportContent({ report }: { report: ResearchReportResponse }) {
           <p className="muted-copy">
             Generated {new Date(report.generated_at).toLocaleString()} / {report.report_id}
           </p>
+        </div>
+
+        <div className="export-bar">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => downloadReportMarkdown(report)}
+          >
+            Export as Markdown
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => window.print()}
+          >
+            Print / Save PDF
+          </button>
         </div>
       </section>
 

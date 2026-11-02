@@ -28,6 +28,9 @@ class Settings:
     max_total_extracted_text_bytes: int = 25 * 1024 * 1024
     auth0_domain: str = ""
     auth0_audience: str = ""
+    dev_mock_auth: bool = False
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-1.5-flash"
     database_url: str = "sqlite:///./finsight_local.db"
     database_echo: bool = False
     cors_origins: list[str] = field(
@@ -81,6 +84,9 @@ class Settings:
             ),
             auth0_domain=os.getenv("AUTH0_DOMAIN", "").strip().removeprefix("https://").rstrip("/"),
             auth0_audience=os.getenv("AUTH0_AUDIENCE", "").strip(),
+            dev_mock_auth=os.getenv("DEV_MOCK_AUTH", "false").strip().lower() in {"1", "true", "yes", "on"},
+            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip(),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash").strip() or "gemini-1.5-flash",
             database_url=os.getenv("DATABASE_URL", "sqlite:///./finsight_local.db").strip(),
             database_echo=os.getenv("DATABASE_ECHO", "false").strip().lower() in {"1", "true", "yes", "on"},
             cors_origins=configured_origins or cls().cors_origins,

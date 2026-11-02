@@ -6,10 +6,10 @@ export function TestSessionProvider({ children }: { children: ReactNode }) {
   const session: AuthSession = {
     isLoading: false,
     isAuthenticated,
-    user: isAuthenticated ? { sub: 'playwright|synthetic-user', name: 'Test User' } : undefined,
+    user: isAuthenticated ? { sub: 'dev|local-developer', name: 'Local Developer' } : undefined,
     loginWithRedirect: async () => setIsAuthenticated(true),
     logout: async () => setIsAuthenticated(false),
-    getAccessTokenSilently: async () => '',
+    getAccessTokenSilently: async () => 'dev-mock-token',
   }
 
   return <AuthSessionProvider session={session}>{children}</AuthSessionProvider>
