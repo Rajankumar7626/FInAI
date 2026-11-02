@@ -52,7 +52,7 @@ export function SelectedDocumentPanel({
         Extracted metrics and analysis are persisted in your encrypted PostgreSQL database.
       </p>
 
-      {financialData && <MetricFactList metrics={financialData.metrics.slice(0, 4)} />}
+      {financialData && <MetricFactList metrics={financialData.metrics.slice(0, 4)} compact />}
 
       {!financialData && (
         <div className="loading-block">Loading extracted metrics...</div>

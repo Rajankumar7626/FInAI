@@ -307,3 +307,36 @@ Total liabilities     147,675       69,252
     assert metrics_map["cash_and_cash_equivalents"].value == 42220.0
     assert metrics_map["total_assets"].value == 418697.0
     assert metrics_map["total_liabilities"].value == 147675.0
+
+
+def test_extracts_new_gaap_cash_flow_and_equity_metrics() -> None:
+    text = """
+CONSOLIDATED STATEMENTS OF CASH FLOWS AND EQUITY (in thousands)
+2025     2024
+Purchases of property and equipment     (32,631 )     (17,155 )
+Net cash used in investing activities     (137,361 )     (5,936 )
+Net cash provided by financing activities     64,563       (11,233 )
+Total stockholders’ equity     271,022       246,037
+"""
+    result = extract_financial_data("doc-gaap", text)
+    metrics_map = {m.metric_name: m for m in result.metrics}
+
+    assert "capital_expenditures" in metrics_map
+    assert metrics_map["capital_expenditures"].value == -32631.0
+    assert metrics_map["capital_expenditures"].unit == "thousand"
+    assert metrics_map["capital_expenditures"].reporting_period == "2025"
+
+    assert "investing_cash_flow" in metrics_map
+    assert metrics_map["investing_cash_flow"].value == -137361.0
+    assert metrics_map["investing_cash_flow"].unit == "thousand"
+    assert metrics_map["investing_cash_flow"].reporting_period == "2025"
+
+    assert "financing_cash_flow" in metrics_map
+    assert metrics_map["financing_cash_flow"].value == 64563.0
+    assert metrics_map["financing_cash_flow"].unit == "thousand"
+    assert metrics_map["financing_cash_flow"].reporting_period == "2025"
+
+    assert "stockholders_equity" in metrics_map
+    assert metrics_map["stockholders_equity"].value == 271022.0
+    assert metrics_map["stockholders_equity"].unit == "thousand"
+    assert metrics_map["stockholders_equity"].reporting_period == "2025"

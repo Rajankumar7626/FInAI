@@ -21,6 +21,10 @@ METRIC_DISPLAY_NAMES = {
     "cash_and_cash_equivalents": "Cash and cash equivalents",
     "operating_cash_flow": "Operating cash flow",
     "earnings_per_share": "Earnings per share",
+    "investing_cash_flow": "Investing cash flow",
+    "financing_cash_flow": "Financing cash flow",
+    "capital_expenditures": "Capital expenditures",
+    "stockholders_equity": "Stockholders' equity",
 }
 SUPPORTED_METRIC_NAMES = tuple(METRIC_DISPLAY_NAMES)
 

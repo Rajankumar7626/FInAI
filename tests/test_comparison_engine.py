@@ -42,6 +42,10 @@ def metric(
         "cash_and_cash_equivalents": "Cash and cash equivalents",
         "operating_cash_flow": "Operating cash flow",
         "earnings_per_share": "Earnings per share",
+        "investing_cash_flow": "Investing activities",
+        "financing_cash_flow": "Financing activities",
+        "capital_expenditures": "Purchases of property and equipment",
+        "stockholders_equity": "Total stockholders' equity",
     }
     amount = f"{value:g}"
     return FinancialMetric(
@@ -71,6 +75,10 @@ def test_compares_all_supported_common_metrics() -> None:
         "cash_and_cash_equivalents",
         "operating_cash_flow",
         "earnings_per_share",
+        "investing_cash_flow",
+        "financing_cash_flow",
+        "capital_expenditures",
+        "stockholders_equity",
     )
     first = data(*(metric(name, 100.0) for name in names), document_id="first")
     second = data(*(metric(name, 125.0) for name in names), document_id="second")
@@ -79,7 +87,7 @@ def test_compares_all_supported_common_metrics() -> None:
 
     assert result.first_document_id == "first"
     assert result.second_document_id == "second"
-    assert len(result.metrics) == 9
+    assert len(result.metrics) == 13
     assert all(item.comparison_status == "comparable" for item in result.metrics)
 
 

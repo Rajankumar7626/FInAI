@@ -69,6 +69,50 @@ METRIC_DEFINITIONS = (
             "eps",
         ),
     ),
+    MetricDefinition(
+        "investing_cash_flow",
+        (
+            "net cash used in investing activities",
+            "net cash provided by investing activities",
+            "cash flows used in investing activities",
+            "cash flows from investing activities",
+            "investing activities",
+        ),
+    ),
+    MetricDefinition(
+        "financing_cash_flow",
+        (
+            "net cash provided by (used in) financing activities",
+            "net cash provided by financing activities",
+            "net cash used in financing activities",
+            "cash flows provided by financing activities",
+            "cash flows used in financing activities",
+            "financing activities",
+        ),
+    ),
+    MetricDefinition(
+        "capital_expenditures",
+        (
+            "purchases of property and equipment",
+            "purchases of and prepayments for property and equipment",
+            "capital expenditures",
+            "additions to property and equipment",
+            "purchase of property, plant and equipment",
+        ),
+    ),
+    MetricDefinition(
+        "stockholders_equity",
+        (
+            "total stockholders' equity",
+            "total stockholders’ equity",
+            "total shareholders' equity",
+            "total shareholders’ equity",
+            "total equity",
+            "stockholders' equity",
+            "stockholders’ equity",
+            "shareholders' equity",
+        ),
+    ),
 )
 
 NUMBER_PATTERN = re.compile(
@@ -124,6 +168,9 @@ EXCLUDED_PATTERNS = (
     re.compile(r"\bweighted\s+average\s+(common\s+)?shares\b", re.IGNORECASE),
     # Proceeds / repayment of debt is a financing cash flow activity, distinct from Total Debt balance
     re.compile(r"\b(proceeds|issuance|repayment)\s+(from|of)\s+long-term\s+debt\b", re.IGNORECASE),
+    # Cash flow net change and beginning balances, distinct from period-end Cash and cash equivalents
+    re.compile(r"\b(net\s+change|net\s+increase|net\s+decrease)\s+in\s+cash\b", re.IGNORECASE),
+    re.compile(r"\bcash\s+(and\s+cash\s+equivalents\s+)?at\s+(beginning|start)\s+of\b", re.IGNORECASE),
 )
 
 
@@ -276,7 +323,7 @@ def _metric_confidence_score(metric: FinancialMetric) -> float:
     if metric.reporting_period is not None:
         score += 20.0
         try:
-            score += (int(metric.reporting_period) - 2000) * 10.0
+            score += (int(metric.reporting_period) - 2000) * 50.0
         except ValueError:
             pass
 
@@ -304,6 +351,18 @@ def _metric_confidence_score(metric: FinancialMetric) -> float:
     elif metric.metric_name == "earnings_per_share":
         if "diluted" in ctx_lower:
             score += 20.0
+    elif metric.metric_name == "investing_cash_flow":
+        if re.search(r"\b(net\s+cash\s+used\s+in\s+investing|investing\s+activities)\b", ctx_lower):
+            score += 30.0
+    elif metric.metric_name == "financing_cash_flow":
+        if re.search(r"\b(financing\s+activities|net\s+cash\s+provided\s+by.*financing)\b", ctx_lower):
+            score += 30.0
+    elif metric.metric_name == "capital_expenditures":
+        if re.search(r"\b(purchases\s+of\s+property\s+and\s+equipment|capital\s+expenditures)\b", ctx_lower):
+            score += 30.0
+    elif metric.metric_name == "stockholders_equity":
+        if re.search(r"\btotal\s+(stockholders|shareholders)[\'’]?\s+equity\b", ctx_lower):
+            score += 35.0
 
     # Reject non-financial bare integer artifacts
     if (
@@ -321,6 +380,7 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
     lines = _normalize_lines(text)
     raw_metrics: list[FinancialMetric] = []
     active_table_scale: str | None = None
+    active_column_years: list[str] | None = None
 
     for line_index, line in enumerate(lines):
         # Update active table statement scale if a scale marker is encountered
@@ -328,6 +388,13 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
             if scale_pattern.search(line):
                 active_table_scale = scale_name
                 break
+
+        # Track column year headers or single year headers (e.g. "December 31, 2025" or "2025    2024" or "2025")
+        years = YEAR_PATTERN.findall(line)
+        if (len(years) >= 2 and len(re.findall(r"[a-zA-Z]", line)) <= 15) or (
+            len(years) == 1 and line.strip() in {years[0], f"December 31, {years[0]}"}
+        ):
+            active_column_years = years
 
         if _is_excluded(line):
             continue
@@ -362,6 +429,12 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
         is_table_row = False
         if len(candidates) == 1:
             selected_candidate = candidates[0]
+            if (
+                not line.rstrip().endswith(".")
+                and (active_table_scale is not None or active_column_years is not None)
+                and ("$" in line or "," in selected_candidate.original_text)
+            ):
+                is_table_row = True
         elif len(candidates) > 1 and ":" not in line and (
             "$" in line
             or "," in candidates[0].original_text
@@ -388,9 +461,9 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
                     start_pos=candidate.start_pos,
                 )
 
-        # Handle explicit Net Loss or Operating Loss negation
+        # Handle explicit Net Loss, Operating Loss, or Cash Outflow ("cash used in") negation
         if candidate.value > 0 and re.search(
-            r"\b(net\s+loss|loss\s+from\s+operations)\b",
+            r"\b(net\s+loss|loss\s+from\s+operations|cash\s+used\s+in)\b",
             source_context,
             re.IGNORECASE,
         ):
@@ -408,6 +481,8 @@ def extract_financial_data(document_id: str, text: str) -> FinancialDataResponse
             reporting_period = reporting_periods[0]
         elif reporting_periods:
             reporting_period = str(max(int(y) for y in reporting_periods))
+        elif is_table_row and active_column_years:
+            reporting_period = active_column_years[0]
 
         raw_metrics.append(
             FinancialMetric(

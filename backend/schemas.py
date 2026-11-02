@@ -18,6 +18,10 @@ FinancialMetricName = Literal[
     "cash_and_cash_equivalents",
     "operating_cash_flow",
     "earnings_per_share",
+    "investing_cash_flow",
+    "financing_cash_flow",
+    "capital_expenditures",
+    "stockholders_equity",
 ]
 
 
@@ -119,6 +123,38 @@ class FinancialMetric(BaseModel):
                 "diluted",
                 "basic",
                 "eps",
+            ),
+            "investing_cash_flow": (
+                "net cash used in investing activities",
+                "net cash provided by investing activities",
+                "cash flows used in investing activities",
+                "cash flows from investing activities",
+                "investing activities",
+            ),
+            "financing_cash_flow": (
+                "net cash provided by financing activities",
+                "net cash used in financing activities",
+                "cash flows provided by financing activities",
+                "cash flows used in financing activities",
+                "financing activities",
+            ),
+            "capital_expenditures": (
+                "purchases of property and equipment",
+                "purchases of and prepayments for property and equipment",
+                "capital expenditures",
+                "additions to property and equipment",
+                "purchase of property, plant and equipment",
+                "property and equipment",
+            ),
+            "stockholders_equity": (
+                "total stockholders' equity",
+                "total stockholders’ equity",
+                "total shareholders' equity",
+                "total shareholders’ equity",
+                "total equity",
+                "stockholders' equity",
+                "stockholders’ equity",
+                "shareholders' equity",
             ),
         }
         if not any(

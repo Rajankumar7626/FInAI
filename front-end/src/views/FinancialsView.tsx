@@ -1,4 +1,4 @@
-import type { DocumentMetadata, FinancialDataResponse } from '../lib/api'
+import type { DocumentMetadata, FinancialDataResponse, FinancialMetric } from '../lib/api'
 import type { RequestState } from '../lib/types'
 import { EmptyState } from '../components/ui/EmptyState'
 import { MetricFactList } from '../components/ui/MetricFactList'
@@ -22,15 +22,38 @@ export function FinancialsView({
   message: string
 }) {
   const metrics = financialData?.metrics ?? []
-  const incomeMetrics = metrics.filter((m) =>
-    ['revenue', 'net_income', 'operating_profit', 'earnings_per_share'].includes(m.metric_name),
-  )
-  const balanceSheetMetrics = metrics.filter((m) =>
-    ['total_assets', 'total_liabilities', 'total_debt', 'cash_and_cash_equivalents'].includes(m.metric_name),
-  )
-  const cashFlowMetrics = metrics.filter((m) =>
-    ['operating_cash_flow'].includes(m.metric_name),
-  )
+
+  const incomeKeys = ['revenue', 'operating_profit', 'net_income', 'earnings_per_share']
+  const balanceSheetKeys = [
+    'cash_and_cash_equivalents',
+    'total_assets',
+    'total_liabilities',
+    'total_debt',
+    'stockholders_equity',
+  ]
+  const cashFlowKeys = [
+    'operating_cash_flow',
+    'capital_expenditures',
+    'investing_cash_flow',
+    'financing_cash_flow',
+  ]
+
+  const incomeMetrics = metrics.filter((m) => incomeKeys.includes(m.metric_name))
+  const balanceSheetMetrics = metrics.filter((m) => balanceSheetKeys.includes(m.metric_name))
+  const cashFlowMetrics = metrics.filter((m) => cashFlowKeys.includes(m.metric_name))
+
+  // Key KPI metrics to highlight at the top
+  const kpiOrder = [
+    { key: 'revenue', label: 'Revenue' },
+    { key: 'net_income', label: 'Net Income' },
+    { key: 'operating_profit', label: 'Operating Profit' },
+    { key: 'operating_cash_flow', label: 'Operating Cash Flow' },
+    { key: 'cash_and_cash_equivalents', label: 'Cash & Equivalents' },
+    { key: 'stockholders_equity', label: "Stockholders' Equity" },
+  ]
+  const kpiList = kpiOrder
+    .map((item) => ({ ...item, metric: metrics.find((m) => m.metric_name === item.key) }))
+    .filter((item): item is { key: string; label: string; metric: FinancialMetric } => Boolean(item.metric))
 
   return (
     <section className="page-stack">
@@ -70,60 +93,131 @@ export function FinancialsView({
 
       {selectedDocument && financialData && (
         <>
+          {kpiList.length > 0 && (
+            <div className="financial-kpi-bar">
+              {kpiList.map((item) => {
+                const val = item.metric.value
+                const isNegative = val < 0
+                return (
+                  <div className={`financial-kpi-card ${isNegative ? 'kpi-negative' : ''}`} key={item.key}>
+                    <span className="kpi-label">{item.label}</span>
+                    <div className="kpi-value">
+                      {formatValue(item.metric.value, item.metric.currency, item.metric.unit)}
+                    </div>
+                    <span className="kpi-period">
+                      {item.metric.reporting_period ? `FY ${item.metric.reporting_period}` : 'Reported value'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <div className="financials-statements-grid">
             <div className="statement-card">
-              <h3>Income Statement</h3>
+              <div className="statement-card-header">
+                <h3>Income Statement</h3>
+                <span className="statement-badge">{incomeMetrics.length} items</span>
+              </div>
               {incomeMetrics.length ? (
-                incomeMetrics.map((m) => (
-                  <div className="statement-metric-row" key={m.metric_name}>
-                    <div>
-                      <div className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</div>
-                      <div className="statement-context">"{m.source_context}"</div>
+                <div className="statement-metrics-list">
+                  {incomeMetrics.map((m) => (
+                    <div className="statement-metric-item" key={m.metric_name}>
+                      <div className="statement-metric-header">
+                        <div className="statement-metric-title-wrap">
+                          <span className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</span>
+                          {m.reporting_period && (
+                            <span className="metric-period-pill">{m.reporting_period}</span>
+                          )}
+                        </div>
+                        <div className="statement-metric-val">
+                          {formatValue(m.value, m.currency, m.unit)}
+                        </div>
+                      </div>
+                      {m.source_context && (
+                        <div className="statement-evidence-box">
+                          <span className="evidence-quote-icon">“</span>
+                          <span className="evidence-quote-text">{m.source_context}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="statement-metric-val">{formatValue(m.value, m.currency, m.unit)}</div>
-                  </div>
-                ))
+                  ))}
+                </div>
               ) : (
                 <p className="muted-copy">No income statement figures extracted.</p>
               )}
             </div>
 
             <div className="statement-card">
-              <h3>Balance Sheet</h3>
+              <div className="statement-card-header">
+                <h3>Balance Sheet</h3>
+                <span className="statement-badge">{balanceSheetMetrics.length} items</span>
+              </div>
               {balanceSheetMetrics.length ? (
-                balanceSheetMetrics.map((m) => (
-                  <div className="statement-metric-row" key={m.metric_name}>
-                    <div>
-                      <div className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</div>
-                      <div className="statement-context">"{m.source_context}"</div>
+                <div className="statement-metrics-list">
+                  {balanceSheetMetrics.map((m) => (
+                    <div className="statement-metric-item" key={m.metric_name}>
+                      <div className="statement-metric-header">
+                        <div className="statement-metric-title-wrap">
+                          <span className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</span>
+                          {m.reporting_period && (
+                            <span className="metric-period-pill">{m.reporting_period}</span>
+                          )}
+                        </div>
+                        <div className="statement-metric-val">
+                          {formatValue(m.value, m.currency, m.unit)}
+                        </div>
+                      </div>
+                      {m.source_context && (
+                        <div className="statement-evidence-box">
+                          <span className="evidence-quote-icon">“</span>
+                          <span className="evidence-quote-text">{m.source_context}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="statement-metric-val">{formatValue(m.value, m.currency, m.unit)}</div>
-                  </div>
-                ))
+                  ))}
+                </div>
               ) : (
                 <p className="muted-copy">No balance sheet figures extracted.</p>
               )}
             </div>
 
             <div className="statement-card">
-              <h3>Cash Flow & Liquidity</h3>
+              <div className="statement-card-header">
+                <h3>Cash Flow & Liquidity</h3>
+                <span className="statement-badge">{cashFlowMetrics.length} items</span>
+              </div>
               {cashFlowMetrics.length ? (
-                cashFlowMetrics.map((m) => (
-                  <div className="statement-metric-row" key={m.metric_name}>
-                    <div>
-                      <div className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</div>
-                      <div className="statement-context">"{m.source_context}"</div>
+                <div className="statement-metrics-list">
+                  {cashFlowMetrics.map((m) => (
+                    <div className="statement-metric-item" key={m.metric_name}>
+                      <div className="statement-metric-header">
+                        <div className="statement-metric-title-wrap">
+                          <span className="statement-metric-name">{m.metric_name.replace(/_/g, ' ')}</span>
+                          {m.reporting_period && (
+                            <span className="metric-period-pill">{m.reporting_period}</span>
+                          )}
+                        </div>
+                        <div className="statement-metric-val">
+                          {formatValue(m.value, m.currency, m.unit)}
+                        </div>
+                      </div>
+                      {m.source_context && (
+                        <div className="statement-evidence-box">
+                          <span className="evidence-quote-icon">“</span>
+                          <span className="evidence-quote-text">{m.source_context}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="statement-metric-val">{formatValue(m.value, m.currency, m.unit)}</div>
-                  </div>
-                ))
+                  ))}
+                </div>
               ) : (
                 <p className="muted-copy">No cash flow figures extracted.</p>
               )}
             </div>
           </div>
 
-          <section className="panel">
+          <section className="panel registry-panel">
             <div className="panel-heading">
               <div>
                 <p className="section-kicker">Complete Registry</p>
