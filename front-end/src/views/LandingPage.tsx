@@ -145,7 +145,7 @@ export function LandingPage({ onLogin, loginFailed, error }: LandingPageProps) {
             <div className="glass-card-metric">98.4%</div>
             <div className="glass-card-subtext">
               <span>Audit Confidence</span>
-              <span style={{ color: '#c4b5fd' }}>Rule R-001</span>
+              <span style={{ color: '#75d2a5' }}>Rule R-001</span>
             </div>
             <div className="glass-progress-bar">
               <div
@@ -191,10 +191,10 @@ export function LandingPage({ onLogin, loginFailed, error }: LandingPageProps) {
             <p
               style={{
                 fontSize: '0.75rem',
-                color: '#a78bfa',
-                fontWeight: 700,
+                color: '#75d2a5',
+                fontWeight: 800,
                 textTransform: 'uppercase',
-                letterSpacing: '0.08em',
+                letterSpacing: '0.12em',
               }}
             >
               Institutional-Grade Intelligence
